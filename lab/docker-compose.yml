@@ -1,0 +1,47 @@
+# Test identity providers, layered over the main Compose file:
+#   docker compose -f docker-compose.yml -f lab/docker-compose.yml up -d --build
+# Paths are relative to the repository root, the directory of the first file. Never for production.
+name: ovp-server
+
+services:
+  api:
+    depends_on:
+      ad:
+        condition: service_healthy
+      entra-mock:
+        condition: service_healthy
+    environment:
+      # The system authorities plus the ones the lab creates, so the mock's certificate is trusted the
+      # ordinary way. The folder holds the domain controller's authority for OVP_LDAP_CA_CERT_PATH too.
+      SSL_CERT_DIR: /etc/ssl/certs:/lab/trust
+    volumes:
+      - lab-trust:/lab/trust:ro
+
+  ad:
+    build: lab/ad
+    privileged: true
+    hostname: dc1
+    networks:
+      default:
+        aliases: [dc1.corp.example.com]
+    volumes:
+      - lab-trust:/lab/trust
+    healthcheck:
+      test: ["CMD", "test", "-f", "/lab/trust/ad-ca.pem"]
+      interval: 5s
+      retries: 60
+
+  entra-mock:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /lab/entra-mock
+    command: ["dotnet", "run", "mock.cs"]
+    volumes:
+      - ./lab/entra-mock:/lab/entra-mock
+      - lab-trust:/lab/trust
+    healthcheck:
+      test: ["CMD", "curl", "-skf", "https://localhost:9443/mint"]
+      interval: 5s
+      retries: 60
+
+volumes:
+  lab-trust:

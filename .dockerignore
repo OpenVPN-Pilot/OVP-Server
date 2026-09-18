@@ -9,6 +9,7 @@ certs/
 config/
 data/
 docs/
+lab/
 .env
 PLAN.md
 *.md
