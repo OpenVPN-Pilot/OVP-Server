@@ -1,0 +1,20 @@
+* text=auto eol=crlf
+
+*.cs          text diff=csharp
+*.csproj      text
+*.props       text
+*.sln         text eol=crlf
+*.slnx        text eol=crlf
+*.md          text
+*.json        text
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+.env.example  text eol=lf
+
+*.ico         binary
+*.png         binary
+*.jpg         binary
+*.dll         binary
+*.exe         binary
