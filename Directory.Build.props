@@ -1,0 +1,31 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <!--
+      Swagger is generated from the XML documentation comments, so the file has to exist. The warning
+      for a public member without a comment stays off: controllers and contracts are documented because
+      a client developer reads them, and the rest of the public surface is public only because the
+      container needs it to be.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NeutralLanguage>en</NeutralLanguage>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>OpenVpnPilot.Server</Product>
+    <Company>Schecher_1</Company>
+    <Authors>Schecher_1</Authors>
+    <Copyright>Copyright (c) 2026 Schecher_1</Copyright>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>
