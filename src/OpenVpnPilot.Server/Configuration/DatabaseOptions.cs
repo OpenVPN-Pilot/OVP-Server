@@ -17,6 +17,10 @@ public sealed record DatabaseOptions
             Database = env.Text("OVP_DB_NAME", "ovp"),
             Username = env.Text("OVP_DB_USER", "ovp"),
             Password = env.Required("OVP_DB_PASSWORD"),
+
+            // Npgsql otherwise probes for Kerberos first, which the runtime image does not carry, and
+            // prints a library error on every start that looks like a failure and is not one.
+            GssEncryptionMode = GssEncryptionMode.Disable,
         };
 
         return new DatabaseOptions

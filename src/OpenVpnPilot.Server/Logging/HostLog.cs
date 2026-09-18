@@ -1,3 +1,5 @@
+using OpenVpnPilot.Server.Configuration;
+
 namespace OpenVpnPilot.Server.Logging;
 
 // Event ids by area: 1000 host and database, 1100 maintenance, 2000 sign in, 2100 tokens and
@@ -7,7 +9,7 @@ internal static partial class HostLog
 {
     [LoggerMessage(EventId = 1000, Level = LogLevel.Information,
         Message = "OpenVPN Pilot Server {Version} starting: authentication {AuthMode}, TLS {TlsMode}, Swagger {Swagger}")]
-    public static partial void Starting(ILogger logger, string version, string authMode, string tlsMode, string swagger);
+    public static partial void Starting(ILogger logger, string version, AuthMode authMode, TlsMode tlsMode, bool swagger);
 
     [LoggerMessage(EventId = 1001, Level = LogLevel.Information, Message = "Database schema is current")]
     public static partial void SchemaCurrent(ILogger logger);
@@ -22,14 +24,14 @@ internal static partial class HostLog
         Message = "Automatic migration is off. The schema must already match this version, or requests will fail")]
     public static partial void MigrationSkipped(ILogger logger);
 
-    [LoggerMessage(EventId = 1005, Level = LogLevel.Information, Message = "Listening for HTTPS on port {Port} with certificate {Subject}, valid until {NotAfter}")]
+    [LoggerMessage(EventId = 1005, Level = LogLevel.Information, Message = "Listening for HTTPS on port {Port} with certificate {Subject}, valid until {NotAfter:yyyy-MM-dd HH:mm} UTC")]
     public static partial void ListeningHttps(ILogger logger, int port, string subject, DateTime notAfter);
 
     [LoggerMessage(EventId = 1006, Level = LogLevel.Information,
         Message = "Listening for HTTP on port {Port} behind a reverse proxy; requests count as HTTPS only from {Proxies}")]
-    public static partial void ListeningBehindProxy(ILogger logger, int port, string proxies);
+    public static partial void ListeningBehindProxy(ILogger logger, int port, IReadOnlyList<System.Net.IPNetwork> proxies);
 
-    [LoggerMessage(EventId = 1007, Level = LogLevel.Warning, Message = "The TLS certificate expires on {NotAfter}, in {Days} day(s)")]
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Warning, Message = "The TLS certificate expires on {NotAfter:yyyy-MM-dd HH:mm} UTC, in {Days} day(s)")]
     public static partial void CertificateExpiring(ILogger logger, DateTime notAfter, int days);
 
     [LoggerMessage(EventId = 1100, Level = LogLevel.Information, Message = "Deleted log folder {Folder}, older than {Days} days")]

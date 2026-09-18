@@ -20,6 +20,9 @@ public sealed class UserRepository(PilotServerDbContext db) : IUserRepository
     public void Add(User user) => db.Users.Add(user);
 
     public void Remove(User user) => db.Users.Remove(user);
+
+    public Task TouchAsync(Guid id, DateTimeOffset at, CancellationToken cancellationToken) =>
+        db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s.SetProperty(u => u.LastSeenAt, at), cancellationToken);
 }
 
 public sealed class RefreshTokenRepository(PilotServerDbContext db) : IRefreshTokenRepository

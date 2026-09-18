@@ -8,10 +8,10 @@ namespace OpenVpnPilot.Server.Logging;
 public static class LoggingSetup
 {
     private const string ConsoleTemplate =
-        "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {RequestId} {UserName} {SourceContext}: {Message:lj}{NewLine}{Exception}";
+        "[{Timestamp:HH:mm:ss.fff} {Level:u3}] {PilotRequestId} {UserName} {SourceContext}: {Message:lj}{NewLine}{Exception}";
 
     private const string FileTemplate =
-        "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] request={RequestId} user={UserName} "
+        "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] request={PilotRequestId} user={UserName} "
         + "client={ClientId} version={ClientVersion} {SourceContext}: {Message:lj}{NewLine}{Exception}";
 
     public static void Configure(LoggerConfiguration configuration, LoggingOptions options)
@@ -29,6 +29,10 @@ public static class LoggingSetup
         }
 
         configuration.MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information);
+
+        // The framework creates data protection keys whether or not anything uses them, and nothing here
+        // does: tokens are signed with OVP_JWT_SIGNING_KEY. Its warnings about where the keys live are noise.
+        configuration.MinimumLevel.Override("Microsoft.AspNetCore.DataProtection", LogEventLevel.Error);
         configuration.WriteTo.Console(outputTemplate: ConsoleTemplate, formatProvider: CultureInfo.InvariantCulture);
 
         // One folder per day and one file per hour. Two open files cover the moment an hour turns over,

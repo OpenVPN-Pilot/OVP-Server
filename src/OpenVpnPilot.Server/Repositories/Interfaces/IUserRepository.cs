@@ -13,6 +13,8 @@ public interface IUserRepository
     public void Add(User user);
 
     public void Remove(User user);
+
+    public Task TouchAsync(Guid id, DateTimeOffset at, CancellationToken cancellationToken);
 }
 
 public interface IRefreshTokenRepository
