@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using OpenVpnPilot.Server.Configuration;
+using OpenVpnPilot.Server.Contracts;
 using OpenVpnPilot.Server.Middleware;
 using OpenVpnPilot.Server.OpenApi;
 using Serilog;
@@ -43,6 +44,10 @@ public static class PipelineSetup
         app.MapControllers();
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") }).AllowAnonymous();
+
+        // An unknown route answers in the same shape as every other refusal, not with an empty body.
+        app.MapFallback(context => ProblemResponses.WriteAsync(
+            context, StatusCodes.Status404NotFound, ErrorCodes.NotFound, "There is no such endpoint.")).AllowAnonymous();
         return app;
     }
 

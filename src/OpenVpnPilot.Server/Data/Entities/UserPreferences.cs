@@ -6,7 +6,7 @@ public sealed class UserFavourite
 
     public Guid ProfileId { get; set; }
 
-    // 1 to 9, bound on the client to the favourite shortcuts.
+    // 1 to 10, bound on the client to the favourite shortcuts; 10 is the zero key.
     public int? Slot { get; set; }
 }
 

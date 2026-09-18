@@ -37,6 +37,7 @@ public static class SwaggerSetup
             });
 
             swagger.OperationFilter<PilotHeadersOperationFilter>();
+            swagger.SchemaFilter<RecordConstraintsSchemaFilter>();
             swagger.SupportNonNullableReferenceTypes();
 
             string xml = Path.Combine(AppContext.BaseDirectory, Assembly.GetExecutingAssembly().GetName().Name + ".xml");
