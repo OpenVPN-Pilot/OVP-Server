@@ -14,7 +14,7 @@ people in with a name only, a YAML user list, LDAP or Active Directory, or Entra
 
 > **Status: in development, version 0.1.0.** Every endpoint works against the Compose stack. Sign in is
 > proven against OpenLDAP, against a Samba 4 Active Directory domain controller, and against a stand-in
-> for Entra ID in [`lab/`](lab/docker-compose.yml); a real Entra ID tenant has not been tried. The client
+> for Entra ID in [`lab/`](lab/docker-compose.yaml); a real Entra ID tenant has not been tried. The client
 > does not speak to it yet. See [Roadmap](#roadmap).
 
 ## Documentation
