@@ -1,0 +1,117 @@
+# Signing in to OpenVPN Pilot Server
+
+`OVP_AUTH_MODE` chooses one of four ways, and all four end the same way: the server issues its own
+short lived access token and a refresh token, and checks the account again on every refresh. Roles,
+revocation and the wipe directive therefore behave identically whichever mode is chosen.
+
+There are two roles. **Administrators** change the shared profiles, tags and vault and manage users.
+**Users** read everything, connect, add vault entries that are missing and keep their own
+favourites, shortcuts and settings. The role always comes from the identity provider.
+
+## `none`: a name only
+
+Anyone who can reach the server signs in with any name and no password. Meant for a closed network
+where the server is a shared library, not a gate. Administrators are the names in
+`OVP_AUTH_NONE_ADMINS`; everybody else is a user.
+
+A name that an administrator deleted cannot sign in again unless it is enabled or purged.
+
+## `file`: a user list
+
+`./config/users.yaml`, mounted at `/app/config/users.yaml`:
+
+```yaml
+users:
+  - username: alice
+    displayName: Alice Example
+    role: admin
+    password: "$argon2id$v=19$m=65536,t=3,p=1$...$..."
+
+  - username: bob
+    role: user
+    password: "$argon2id$v=19$m=65536,t=3,p=1$...$..."
+    disabled: false
+```
+
+Create a hash without the password ending up in the shell history:
+
+```bash
+docker compose run --rm api hash-password
+```
+
+A plain password in the file works too, and the server warns about each one at every start.
+
+The server reads the file again within a few seconds of a change, without a restart. Removing a user
+or setting `disabled: true` takes effect on that user's next request: their clients are told to erase
+everything they received from this server. A file that no longer parses is ignored with an error in
+the log and the previous list stays in force; at start it stops the server instead.
+
+## `ldap`: LDAP or Active Directory
+
+The server binds with a service account, finds the user with `OVP_LDAP_USER_FILTER`, and proves the
+password by binding as that user. Only LDAPS or StartTLS is used; a directory with a private
+certificate authority is trusted by naming that authority in `OVP_LDAP_CA_CERT_PATH`.
+
+- Members of `OVP_LDAP_ADMIN_GROUP` are administrators.
+- With `OVP_LDAP_USER_GROUP` set, only its members (and administrators) may sign in at all.
+- With `OVP_LDAP_ACTIVE_DIRECTORY=true`, nested group membership counts and a disabled account
+  (`userAccountControl`) cannot sign in. Other directories need `groupOfNames` or
+  `groupOfUniqueNames` groups.
+
+Active Directory example:
+
+```
+OVP_AUTH_MODE=ldap
+OVP_LDAP_HOST=dc01.corp.example.com
+OVP_LDAP_BIND_DN=CN=svc-ovp,OU=Service Accounts,DC=corp,DC=example,DC=com
+OVP_LDAP_BIND_PASSWORD=...
+OVP_LDAP_BASE_DN=DC=corp,DC=example,DC=com
+OVP_LDAP_ADMIN_GROUP=CN=OVP Admins,OU=Groups,DC=corp,DC=example,DC=com
+OVP_LDAP_USER_GROUP=CN=OVP Users,OU=Groups,DC=corp,DC=example,DC=com
+```
+
+The directory is asked again on every refresh, so a user who is deleted, disabled or removed from the
+user group loses access within one access token lifetime and their clients are told to erase what
+they hold. When the directory cannot be reached, sign in and refresh answer
+`auth.provider_unavailable` and clients keep working from what they have.
+
+## `entra`: Entra ID
+
+Clients sign in with Microsoft themselves and hand the server the resulting access token, which the
+server checks against Entra's published keys. The server needs no secret of its own.
+
+One app registration is enough:
+
+1. **App registrations, New registration.** Any name. Supported accounts: this directory only.
+2. **Authentication, Add a platform, Mobile and desktop applications**, redirect URI
+   `http://localhost`. Enable **Allow public client flows**.
+3. **Expose an API.** Set the application id URI (the default `api://<application id>` is fine) and
+   add a scope named `access_as_user`, consent by admins and users.
+4. **App roles.** Add `Admin` and `User`, allowed member type users/groups.
+5. **Enterprise applications**, the same app, **Users and groups:** assign people or groups to the
+   roles. With `OVP_ENTRA_REQUIRE_ROLE=true`, only assigned people may sign in.
+
+Then:
+
+```
+OVP_AUTH_MODE=entra
+OVP_ENTRA_TENANT_ID=<directory id>
+OVP_ENTRA_CLIENT_ID=<application id>
+```
+
+Instead of the `Admin` role, members of a security group can be administrators through
+`OVP_ENTRA_ADMIN_GROUP`, which needs the group claim configured under **Token configuration**.
+
+The server cannot ask Entra whether an account still exists without a permission it deliberately does
+not have, so a session lasts `OVP_ENTRA_REAUTH_HOURS` and the client then signs in with Entra again.
+That is when a disabled account is noticed. An administrator who needs someone gone at once disables
+them in the server as well.
+
+This mode is checked against Entra's real signing keys for refusing forged and expired tokens. Signing
+in with a token from a real tenant has not been measured against this build.
+
+## Switching modes
+
+Users are recorded by name. When the mode changes, a session started under the previous mode is ended
+at its next refresh with `auth.reauthentication_required`, and nothing is erased; the person signs in
+again the new way, and a user of the same name keeps their favourites, shortcuts and settings.

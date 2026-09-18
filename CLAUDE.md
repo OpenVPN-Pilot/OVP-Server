@@ -103,11 +103,76 @@ This repository is public. Keep it free of context about who uses it or why it w
 - Log generously. Every request, every login, every change and every refusal is written with who,
   what and why, because an operator reading the console is the only person who can explain a problem
   a client reports.
+- Log messages are source generated with `[LoggerMessage]`, in a `*Log.cs` class next to the code
+  that writes them, as in the client. Event ids are grouped by area; the ranges are listed at the top
+  of `Logging/HostLog.cs`. Pass values, not the result of formatting them: enums, ids and paths go in
+  as they are.
 
 ---
 
 ## Verified facts
 
-Measured behaviour goes here, as the client's `CLAUDE.md` does it: what was measured, against what,
-and what it means for the code. These are test results, not assumptions. Do not re-derive them, and
-correct this section if a measurement ever contradicts it.
+Measured against the Compose stack on Docker Desktop for Windows with .NET 10 and PostgreSQL 17. These
+are test results, not assumptions. Do not re-derive them, and correct this section if a measurement
+ever contradicts it.
+
+### The image's SDK is the reference build
+
+The SDK in `mcr.microsoft.com/dotnet/sdk:10.0` was newer than the workstation's 10.0.101 and brought
+CA1873, which flags a log argument that is computed at the call site, such as `state.ToString()`.
+The local build passed and the image build failed. `docker compose build` is therefore the build that
+decides, and log methods take enums, ids and `PathString` as they are.
+
+### Validation attributes on records belong to the parameter
+
+`[property: Required]` on a positional record compiles, and MVC then throws on every request that
+binds the record: validation metadata on a property of a record's primary constructor is refused at
+run time, not at build time. The attributes go on the parameter, `[Required] string Username`.
+
+### The framework's RequestId replaces ours
+
+ASP.NET Core opens a logging scope for every request with a property named `RequestId`, holding the
+connection based trace id from before any middleware ran. Serilog lets the scope win over a
+`LogContext` property of the same name, so every line the framework or a service logged showed the
+connection id while the request log showed ours. The server's id is therefore `PilotRequestId`.
+
+### Npgsql looks for Kerberos first
+
+Without `GssEncryptionMode=Disable`, Npgsql tries GSS encryption on every new connection, fails to
+load `libgssapi_krb5.so.2`, which the runtime image does not carry, and prints a library error on
+start that reads like a failure. The connection then succeeds anyway. The option is set in
+`DatabaseOptions`.
+
+### The first migration logs an error
+
+On an empty database EF Core queries `__EFMigrationsHistory` before creating it and logs the failure
+at `Error`, then creates the table and migrates. That line on a first start is expected.
+
+### A user file on a bind mount is noticed by its modification time
+
+On Docker Desktop for Windows, changing `config/users.yaml` on the host changes the modification time
+the container sees within a second. The store compares it at most every five seconds rather than
+watching for file events, which do not cross every kind of bind mount. Measured: removing a user from
+the file answered that user's next request with the wipe directive six seconds later.
+
+### PostgreSQL's xmin is the concurrency token
+
+`uint Version` with `IsRowVersion()` maps to the system column `xmin`, which the migration lists but
+PostgreSQL does not create. Every update changes it and EF reads it back, so it serves as the ETag
+without a column of its own. An update sent with an older value fails with a concurrency exception,
+which `UnitOfWork` turns into 412.
+
+### Testing LDAP needs its own certificate authority
+
+`osixia/openldap:1.5.0` generates its server certificate from an authority built into the image, and
+that authority expired on 15 January 2026. The server refused it, correctly, and the refusal first
+surfaced as a 500 because `AuthenticationException` was not among the exceptions that mean the
+directory cannot be reached; it is now, and answers `auth.provider_unavailable`. For tests, issue a
+certificate from a throwaway authority and mount it with `LDAP_TLS_CRT_FILENAME`,
+`LDAP_TLS_KEY_FILENAME` and `LDAP_TLS_CA_CRT_FILENAME`.
+
+### Port 8443 can be reserved on Windows
+
+Hyper-V reserves port ranges on Windows hosts, and 8443 was among them: publishing it failed with
+"access to a socket was not permitted". `OVP_PUBLISH_PORT` exists for this; the container port stays
+8443.
