@@ -23,7 +23,7 @@ public sealed class EntraTokenValidator
         options = auth.Entra ?? throw new InvalidOperationException("Entra options are missing.");
         this.logger = logger;
         metadata = new ConfigurationManager<OpenIdConnectConfiguration>(
-            $"https://login.microsoftonline.com/{options.TenantId}/v2.0/.well-known/openid-configuration",
+            $"{options.Authority}/.well-known/openid-configuration",
             new OpenIdConnectConfigurationRetriever(),
             new HttpDocumentRetriever { RequireHttps = true });
     }
@@ -44,10 +44,11 @@ public sealed class EntraTokenValidator
 
         TokenValidationParameters parameters = new()
         {
-            // Entra issues version 1 tokens unless the registration asks for version 2; both are accepted.
+            // Entra issues version 1 tokens unless the registration asks for version 2; both are accepted. A
+            // version 1 token names the global security token service even for tenants of a national cloud.
             ValidIssuers =
             [
-                $"https://login.microsoftonline.com/{options.TenantId}/v2.0",
+                options.Authority,
                 $"https://sts.windows.net/{options.TenantId}/",
             ],
             ValidAudiences = options.Audiences,

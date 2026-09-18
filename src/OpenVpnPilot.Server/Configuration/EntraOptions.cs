@@ -2,7 +2,13 @@ namespace OpenVpnPilot.Server.Configuration;
 
 public sealed record EntraOptions
 {
+    // The Microsoft identity platform of the cloud the tenant lives in: the global one, or a national
+    // cloud such as https://login.microsoftonline.us.
+    public required string Instance { get; init; }
+
     public required string TenantId { get; init; }
+
+    public string Authority => $"{Instance}/{TenantId}/v2.0";
 
     // The application registration the desktop client signs in with. Published to clients unchanged.
     public required string ClientId { get; init; }
@@ -31,9 +37,15 @@ public sealed record EntraOptions
     {
         string clientId = env.Required("OVP_ENTRA_CLIENT_ID");
         string audience = env.Text("OVP_ENTRA_AUDIENCE", $"api://{clientId}");
+        string instance = env.Text("OVP_ENTRA_INSTANCE", "https://login.microsoftonline.com").TrimEnd('/');
+        if (!Uri.TryCreate(instance, UriKind.Absolute, out Uri? instanceUri) || instanceUri.Scheme != Uri.UriSchemeHttps)
+        {
+            env.Fail("OVP_ENTRA_INSTANCE", $"must be an https URL such as https://login.microsoftonline.com, was '{instance}'.");
+        }
 
         return new EntraOptions
         {
+            Instance = instance,
             TenantId = env.Required("OVP_ENTRA_TENANT_ID"),
             ClientId = clientId,
             Audiences = audience.StartsWith("api://", StringComparison.Ordinal)

@@ -31,6 +31,6 @@ public sealed class ServerInfoService(ServerOptions options) : IServerInfoServic
                     entra.TenantId,
                     entra.ClientId,
                     entra.Scope,
-                    $"https://login.microsoftonline.com/{entra.TenantId}/v2.0"));
+                    entra.Authority));
     }
 }

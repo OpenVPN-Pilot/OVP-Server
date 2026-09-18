@@ -71,6 +71,7 @@ The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Dir
 
 | Variable | Default | |
 | --- | --- | --- |
+| `OVP_ENTRA_INSTANCE` | `https://login.microsoftonline.com` | The identity platform of the tenant's cloud, for example `https://login.microsoftonline.us` for US Government. Must be https |
 | `OVP_ENTRA_TENANT_ID` | required | Directory (tenant) id |
 | `OVP_ENTRA_CLIENT_ID` | required | Application id of the registration clients sign in with |
 | `OVP_ENTRA_AUDIENCE` | `api://<client id>` | Audience of the access tokens clients present |
