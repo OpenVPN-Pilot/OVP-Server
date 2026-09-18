@@ -12,9 +12,10 @@ connecting; the server never starts a tunnel and never sees one.
 It is a REST API in one ASP.NET Core project, runs in Docker Compose next to PostgreSQL, and signs
 people in with a name only, a YAML user list, LDAP or Active Directory, or Entra ID.
 
-> **Status: in development, version 0.1.0.** Every endpoint works against the Compose stack; the four
-> sign in modes are proven except signing in with a real Entra ID tenant. The client does not speak to
-> it yet. See [Roadmap](#roadmap).
+> **Status: in development, version 0.1.0.** Every endpoint works against the Compose stack. Sign in is
+> proven against OpenLDAP, against a Samba 4 Active Directory domain controller, and against a stand-in
+> for Entra ID in [`lab/`](lab/docker-compose.yml); a real Entra ID tenant has not been tried. The client
+> does not speak to it yet. See [Roadmap](#roadmap).
 
 ## Documentation
 

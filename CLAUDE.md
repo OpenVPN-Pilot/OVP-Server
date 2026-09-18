@@ -162,14 +162,47 @@ PostgreSQL does not create. Every update changes it and EF reads it back, so it 
 without a column of its own. An update sent with an older value fails with a concurrency exception,
 which `UnitOfWork` turns into 412.
 
-### Testing LDAP needs its own certificate authority
+### A refused directory certificate is an outage, not a fault
 
-`osixia/openldap:1.5.0` generates its server certificate from an authority built into the image, and
-that authority expired on 15 January 2026. The server refused it, correctly, and the refusal first
-surfaced as a 500 because `AuthenticationException` was not among the exceptions that mean the
-directory cannot be reached; it is now, and answers `auth.provider_unavailable`. For tests, issue a
-certificate from a throwaway authority and mount it with `LDAP_TLS_CRT_FILENAME`,
-`LDAP_TLS_KEY_FILENAME` and `LDAP_TLS_CA_CRT_FILENAME`.
+`osixia/openldap:1.5.0`, used for the first LDAP test, issues its server certificate from an authority
+built into the image, and that authority expired on 15 January 2026. The server refused it, correctly,
+and the refusal first surfaced as a 500 because `AuthenticationException` was not among the exceptions
+that mean the directory cannot be reached. It is now, and answers `auth.provider_unavailable`; a domain
+controller certificate from an authority that is not trusted answers the same.
+
+### Active Directory answers a root search with referrals
+
+Measured against Samba 4.17 as a domain controller in `lab/`. A subtree search from
+`DC=corp,DC=example,DC=com` returns the user and, alongside, search result references to
+`CN=Configuration`, `DC=DomainDnsZones` and `DC=ForestDnsZones`. Novell's client throws
+`LdapReferralException` for each while enumerating, which made every sign in a 500 against Active
+Directory while OpenLDAP, which returns no references, worked. Windows Server returns the same
+references. `LdapDirectory` skips them: none of those partitions holds the domain's users.
+
+Also measured there: `LDAP_MATCHING_RULE_IN_CHAIN` on the user's own entry finds membership through a
+nested group; `userAccountControl` carries the disabled bit after `samba-tool user disable`; a deleted
+account is simply not found; StartTLS on 389 works as LDAPS on 636 does; and .NET accepts Samba's
+certificate, which names the host only in its common name and has no subject alternative name.
+
+### SSL_CERT_DIR takes a list
+
+The runtime image's .NET reads `SSL_CERT_DIR` as a colon separated list of folders of PEM files, without
+the hashed names OpenSSL itself wants. `lab/` sets `/etc/ssl/certs:/lab/trust`, so the system
+authorities stay trusted and the lab's are added. The folder is read when the process starts, so a
+certificate authority that appears later is only trusted after a restart.
+
+### A file based C# app has no reflection based JSON
+
+`dotnet run mock.cs` builds with the settings meant for native compilation, and
+`JsonSerializer.Serialize` of an anonymous type throws that reflection based serialisation is disabled.
+The lab's Entra stand-in sets `JsonSerializerIsReflectionEnabledByDefault` and `PublishAot=false` in
+its `#:property` lines.
+
+### The default fallback route leaves out paths with a dot
+
+`MapFallback` without a pattern uses `{*path:nonfile}`, which does not match `/swagger/index.html`.
+With Swagger off, such a path matched no endpoint at all, and the fallback authorisation policy then
+answered 401 `auth.token_missing` instead of 404. The fallback is mapped with `{*path}`.
 
 ### Port 8443 can be reserved on Windows
 

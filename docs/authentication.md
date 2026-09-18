@@ -75,6 +75,21 @@ user group loses access within one access token lifetime and their clients are t
 they hold. When the directory cannot be reached, sign in and refresh answer
 `auth.provider_unavailable` and clients keep working from what they have.
 
+What Active Directory needs from its side:
+
+- **A certificate on the domain controllers.** A domain controller offers LDAPS and StartTLS only once
+  it has a server certificate, usually from Active Directory Certificate Services with the Domain
+  Controller template. Without one, port 636 refuses the handshake. `OVP_LDAP_HOST` must be a name in
+  that certificate, and `OVP_LDAP_CA_CERT_PATH` the issuing authority exported as PEM.
+- **A service account** that may read users and groups. An ordinary domain user can.
+- A disabled account cannot sign in and is answered like a wrong password, since a disabled account's
+  password cannot be checked. Sessions it already has end with the wipe directive at their next refresh.
+
+Searching from the domain root, Active Directory also answers with references to its other partitions;
+they are skipped, as they hold no users of the domain. This mode has been measured against a Samba 4
+domain controller, which answers LDAP the way Windows Server does, including nested groups; the setup is
+in `lab/` and described in [development.md](development.md#testing).
+
 ## `entra`: Entra ID
 
 Clients sign in with Microsoft themselves and hand the server the resulting access token, which the
@@ -107,8 +122,15 @@ not have, so a session lasts `OVP_ENTRA_REAUTH_HOURS` and the client then signs 
 That is when a disabled account is noticed. An administrator who needs someone gone at once disables
 them in the server as well.
 
-This mode is checked against Entra's real signing keys for refusing forged and expired tokens. Signing
-in with a token from a real tenant has not been measured against this build.
+For a tenant in a national cloud, set `OVP_ENTRA_INSTANCE`, for example to
+`https://login.microsoftonline.us`.
+
+Measured: forged and expired tokens against Entra's real published keys, and the whole path against the
+stand-in identity provider in `lab/`, which signs tokens the way Entra does. Accepted there: version 1
+and 2 tokens, the audience as `api://` URI or as bare application id, the admin role, the user role and
+the admin group. Refused: a wrong audience, a missing or different scope, an expired token, a forged
+signature and another tenant's issuer; and a session past `OVP_ENTRA_REAUTH_HOURS`. Signing in with a
+token from a real tenant has not been measured.
 
 ## Switching modes
 

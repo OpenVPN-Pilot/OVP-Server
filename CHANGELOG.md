@@ -47,3 +47,15 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
 - Swagger at `/swagger`, switched with `OVP_SWAGGER_ENABLED`, filling in the mandatory headers by
   itself when a request is tried by hand.
 - `hash-password` for the user file and a health probe that needs no curl, both in the image.
+- `OVP_ENTRA_INSTANCE` for tenants in a national cloud.
+- **A test lab** in `lab/`: a Samba 4 Active Directory domain controller with users and nested groups,
+  and a stand-in for Entra ID that mints tokens with chosen claims, both added to the Compose project
+  with one extra file. Sign in with `ldap` and `entra` can be checked without a directory or tenant.
+
+### Fixed
+
+- Signing in against Active Directory failed with a server error. A search from the domain root is
+  answered with references to the directory's other partitions besides the user, and those references
+  were not expected. They are skipped.
+- With Swagger switched off, `/swagger/index.html` and `/swagger/v1/swagger.json` answered 401
+  instead of 404.
