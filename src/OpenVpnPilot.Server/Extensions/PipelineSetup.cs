@@ -45,8 +45,10 @@ public static class PipelineSetup
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") }).AllowAnonymous();
 
-        // An unknown route answers in the same shape as every other refusal, not with an empty body.
-        app.MapFallback(context => ProblemResponses.WriteAsync(
+        // An unknown route answers in the same shape as every other refusal, not with an empty body. The
+        // pattern includes paths with a dot, which the default fallback leaves out: without it
+        // /swagger/index.html on a server with Swagger off met the sign in requirement and answered 401.
+        app.MapFallback("{*path}", context => ProblemResponses.WriteAsync(
             context, StatusCodes.Status404NotFound, ErrorCodes.NotFound, "There is no such endpoint.")).AllowAnonymous();
         return app;
     }

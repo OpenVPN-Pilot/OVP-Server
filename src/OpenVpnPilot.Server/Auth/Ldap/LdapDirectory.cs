@@ -25,7 +25,16 @@ public sealed class LdapDirectory(AuthOptions auth)
         List<LdapEntry> entries = [];
         while (await results.HasMoreAsync())
         {
-            entries.Add(await results.NextAsync());
+            try
+            {
+                entries.Add(await results.NextAsync());
+            }
+            catch (LdapReferralException)
+            {
+                // Active Directory answers a search from the domain root with references to its other
+                // partitions (Configuration, DomainDnsZones, ForestDnsZones). None of them holds the
+                // domain's users, and following them would mean binding to other servers.
+            }
         }
 
         // More than one match means the filter is ambiguous, and guessing would sign in the wrong person.
