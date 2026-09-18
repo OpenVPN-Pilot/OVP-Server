@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.git/
+.vs/
+.vscode/
+.idea/
+logs/
+certs/
+config/
+data/
+docs/
+.env
+PLAN.md
+*.md

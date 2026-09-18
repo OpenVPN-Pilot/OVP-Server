@@ -1,0 +1,22 @@
+# Users for OVP_AUTH_MODE=file. Copy to users.yaml next to this file.
+# The server reads the file again within a few seconds of a change; no restart is needed.
+#
+# password: an Argon2id hash from
+#   docker compose run --rm api hash-password
+# A plain password also works, and the server warns about it on every start.
+#
+# role: admin or user.
+# disabled: true signs the user out and tells their clients to erase what they hold from this server.
+# Removing a user from the file does the same.
+
+users:
+  - username: alice
+    displayName: Alice Example
+    role: admin
+    password: "$argon2id$v=19$m=65536,t=3,p=1$REPLACE$REPLACE"
+
+  - username: bob
+    displayName: Bob Example
+    role: user
+    password: "$argon2id$v=19$m=65536,t=3,p=1$REPLACE$REPLACE"
+    disabled: false

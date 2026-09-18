@@ -1,0 +1,50 @@
+name: ovp-server
+
+# Docker keeps every line a container prints. Without a limit that grows until the disk is full, and
+# Docker can only rotate by size, not by age. The dated seven day history is in ./logs instead.
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${OVP_DB_NAME:-ovp}
+      POSTGRES_USER: ${OVP_DB_USER:-ovp}
+      POSTGRES_PASSWORD: ${OVP_DB_PASSWORD:?Set OVP_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: openvpnpilot-server:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      OVP_DB_HOST: postgres
+      TZ: ${TZ:-UTC}
+    ports:
+      - "${OVP_PUBLISH_PORT:-8443}:${OVP_CONTAINER_PORT:-8443}"
+    volumes:
+      - ./logs:/app/logs
+      - ./certs:/app/certs:ro
+      - ./config:/app/config:ro
+    logging: *logging
+
+volumes:
+  pgdata:
