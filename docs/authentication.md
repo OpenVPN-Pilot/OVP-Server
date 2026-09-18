@@ -10,9 +10,10 @@ favourites, shortcuts and settings. The role always comes from the identity prov
 
 ## `none`: a name only
 
-Anyone who can reach the server signs in with any name and no password. Meant for a closed network
-where the server is a shared library, not a gate. Administrators are the names in
-`OVP_AUTH_NONE_ADMINS`; everybody else is a user.
+Anyone who can reach the server signs in with any name and no password, including the names of the
+administrators, and the server says so in its log at every start. Meant for a closed network where the
+server is a shared library, not a gate; never for a server reachable from anywhere else.
+Administrators are the names in `OVP_AUTH_NONE_ADMINS`; everybody else is a user.
 
 A name that an administrator deleted cannot sign in again unless it is enabled or purged.
 
@@ -114,8 +115,27 @@ OVP_ENTRA_TENANT_ID=<directory id>
 OVP_ENTRA_CLIENT_ID=<application id>
 ```
 
-Instead of the `Admin` role, members of a security group can be administrators through
-`OVP_ENTRA_ADMIN_GROUP`, which needs the group claim configured under **Token configuration**.
+Who is what, in order:
+
+| | By app role | Or by group (object id) |
+| --- | --- | --- |
+| Administrator | `OVP_ENTRA_ADMIN_ROLE`, default `Admin` | `OVP_ENTRA_ADMIN_GROUP` |
+| User | `OVP_ENTRA_USER_ROLE`, default `User` | `OVP_ENTRA_USER_GROUP` |
+
+Anyone else is refused when `OVP_ENTRA_USER_GROUP` is set or `OVP_ENTRA_REQUIRE_ROLE=true`, and is a
+user otherwise. Groups need the group claim, configured under **Token configuration** as security
+groups by object id. A person in more than 200 groups receives no group claim at all (Entra's overage
+rule), so for large directories assign the app roles to the groups instead; roles are always in the token.
+
+Someone who has signed in before and later loses the role or group is treated like a disabled account:
+their clients are told to erase what they hold at the next sign in with Entra.
+
+Two more checks guard the exchange. The token must have been requested by `OVP_ENTRA_CLIENT_ID`
+itself (its `azp` or `appid`), so another application in the tenant that was granted the scope cannot
+sign people in here. People are recognised by their Entra object id, which never changes: a renamed
+account keeps its record, and a name that reappears with a different object id is refused with
+`auth.identity_conflict` rather than given the earlier person's record, until an administrator purges
+the old one.
 
 The server cannot ask Entra whether an account still exists without a permission it deliberately does
 not have, so a session lasts `OVP_ENTRA_REAUTH_HOURS` and the client then signs in with Entra again.
@@ -127,9 +147,11 @@ For a tenant in a national cloud, set `OVP_ENTRA_INSTANCE`, for example to
 
 Measured: forged and expired tokens against Entra's real published keys, and the whole path against the
 stand-in identity provider in `lab/`, which signs tokens the way Entra does. Accepted there: version 1
-and 2 tokens, the audience as `api://` URI or as bare application id, the admin role, the user role and
+and 2 tokens, the audience as `api://` URI or as bare application id, the admin role, the user role, the user group, a renamed account and
 the admin group. Refused: a wrong audience, a missing or different scope, an expired token, a forged
-signature and another tenant's issuer; and a session past `OVP_ENTRA_REAUTH_HOURS`. Signing in with a
+signature, another tenant's issuer, a token requested by another application, someone new with neither
+role nor group, and a known name under a different object id; and a session past
+`OVP_ENTRA_REAUTH_HOURS`. Signing in with a
 token from a real tenant has not been measured.
 
 ## Switching modes

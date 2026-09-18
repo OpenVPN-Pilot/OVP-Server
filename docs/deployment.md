@@ -27,6 +27,9 @@ openssl rand -base64 48   # OVP_JWT_SIGNING_KEY
 openssl rand -hex 24      # OVP_DB_PASSWORD
 ```
 
+`.env` holds secrets: `chmod 600 .env`. Better still, give the keys and passwords as Docker secrets
+through `<NAME>_FILE`, see [configuration.md](configuration.md).
+
 **Keep a copy of `OVP_DATA_KEY` somewhere other than this machine.** Every profile configuration and
 every vault entry is encrypted with it. A database backup without the key is unreadable, by design.
 

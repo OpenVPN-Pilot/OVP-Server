@@ -14,6 +14,9 @@ public sealed class UserRepository(PilotServerDbContext db) : IUserRepository
     public Task<User?> FindByUsernameAsync(string username, CancellationToken cancellationToken) =>
         db.Users.FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
 
+    public Task<User?> FindByExternalIdAsync(AuthProviderKind provider, string externalId, CancellationToken cancellationToken) =>
+        db.Users.FirstOrDefaultAsync(u => u.Provider == provider && u.ExternalId == externalId, cancellationToken);
+
     public async Task<IReadOnlyList<User>> ListAsync(CancellationToken cancellationToken) =>
         await db.Users.AsNoTracking().OrderBy(u => u.Username).ToListAsync(cancellationToken);
 

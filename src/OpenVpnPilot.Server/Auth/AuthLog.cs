@@ -19,6 +19,17 @@ internal static partial class AuthLog
     [LoggerMessage(EventId = 2004, Level = LogLevel.Warning, Message = "Identity provider changed {Username} from {From} to {To}")]
     public static partial void ProviderChangedState(ILogger logger, string username, UserState from, UserState to);
 
+    [LoggerMessage(EventId = 2005, Level = LogLevel.Information, Message = "User {From} was renamed at the identity provider to {To}")]
+    public static partial void UserRenamed(ILogger logger, string from, string to);
+
+    [LoggerMessage(EventId = 2006, Level = LogLevel.Warning,
+        Message = "Refused {Username}: the name belongs to Entra object {Stored}, the token names object {Presented}")]
+    public static partial void IdentityConflict(ILogger logger, string username, string? stored, string? presented);
+
+    [LoggerMessage(EventId = 2007, Level = LogLevel.Warning,
+        Message = "Authentication mode none: anyone who reaches this server can sign in under any name, including {Admins}")]
+    public static partial void NoAuthentication(ILogger logger, IReadOnlySet<string> admins);
+
     [LoggerMessage(EventId = 2010, Level = LogLevel.Information, Message = "Loaded {Count} user(s) from {Path}")]
     public static partial void UserFileLoaded(ILogger logger, string path, int count);
 

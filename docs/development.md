@@ -82,7 +82,7 @@ running stack. `none` and `file` need nothing more than Swagger or `curl`. For `
 `lab/` adds two stand-in identity providers to the same Compose project:
 
 ```bash
-docker compose -f docker-compose.yml -f lab/docker-compose.yml up -d --build
+docker compose -f docker-compose.yaml -f lab/docker-compose.yaml up -d --build
 ```
 
 **`ad`** is a Samba 4 domain controller for `CORP.EXAMPLE.COM`, provisioned on first start, which answers
@@ -122,11 +122,14 @@ OVP_ENTRA_CLIENT_ID=bbbbbbbb-0000-0000-0000-000000000002
 ```
 
 ```bash
-docker compose -f docker-compose.yml -f lab/docker-compose.yml exec entra-mock curl -sk \
+docker compose -f docker-compose.yaml -f lab/docker-compose.yaml exec entra-mock curl -sk \
   "https://localhost:9443/mint?tenant=aaaaaaaa-0000-0000-0000-000000000001&aud=api://bbbbbbbb-0000-0000-0000-000000000002&roles=Admin&upn=admin@example.com"
 ```
 
-The token goes to `POST /api/v1/auth/entra/exchange`. `/mint` also takes `scp`, `groups`, `oid`,
+The token goes to `POST /api/v1/auth/entra/exchange`. Pass the same `oid` every time a test signs in
+as the same person, as Entra would: without it the mock invents one, and the server then refuses the
+known name as belonging to someone else. Pass `azp` with the client id, as Entra does. `/mint` also
+takes `scp`, `groups`,
 `name`, `exp` in minutes (negative for an expired token), `ver=1` for a version 1 token, `noscp=1`,
 `rogue=1` for a signature by a key the mock does not publish, and `iss` to claim another issuer.
 

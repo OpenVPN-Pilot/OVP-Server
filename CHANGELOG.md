@@ -52,6 +52,29 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
   and a stand-in for Entra ID that mints tokens with chosen claims, both added to the Compose project
   with one extra file. Sign in with `ldap` and `entra` can be checked without a directory or tenant.
 
+- `OVP_ENTRA_USER_GROUP`: members of a group may sign in as users, as an alternative to the user app
+  role; with it set, nobody else may sign in.
+- Every variable can be given as `<NAME>_FILE`, the path of a file holding the value, for Docker
+  secrets.
+- `/health`, the same check as `/health/ready`, and the container health check spelled out in the
+  Compose file.
+
+### Security
+
+- Answers under `/api` carry `Cache-Control: no-store`, so no proxy or HTTP cache keeps tokens,
+  configurations or vault entries. Every answer carries `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`, and answers over HTTPS carry `Strict-Transport-Security`.
+- Entra ID tokens must have been requested by `OVP_ENTRA_CLIENT_ID` itself. Before, any application in
+  the tenant that had been granted the scope could have signed people in.
+- Entra ID users are recognised by their object id rather than their user principal name, which can be
+  renamed and reassigned. A renamed account keeps its record; a name that reappears with another object
+  id is refused with `auth.identity_conflict` instead of being handed the earlier person's record.
+- An Entra ID user who has signed in before and loses the role or group is treated as disabled, and
+  their clients are told to wipe themselves, as with LDAP.
+- Profile and tag names may no longer contain control characters, which could forge lines in the log
+  and entries in a client's list.
+- Mode `none` warns at every start that anyone can sign in under any name.
+
 ### Fixed
 
 - Signing in against Active Directory failed with a server error. A search from the domain root is

@@ -57,11 +57,13 @@ file keeps at most five files of 50 MB per container using the `local` driver. T
 | Endpoint | Answers 200 when |
 | --- | --- |
 | `/health/live` | The process is serving requests |
-| `/health/ready` | It can also reach the database |
+| `/health`, `/health/ready` | It can also reach the database |
 
 Both are anonymous, need no headers and are answered over plain HTTP in proxy mode, so a load
 balancer can use them. The container's own health check calls `/health/live` through the server
-binary, because the runtime image has no curl. They are logged only at `Verbose`.
+binary, because the runtime image has no curl; `docker compose ps` shows the result, and the check is
+spelled out in `docker-compose.yaml`. It asks `live` on purpose: a database outage is not something
+restarting the API would fix. They are logged only at `Verbose`.
 
 ## Taking someone's access away
 

@@ -25,7 +25,13 @@ public sealed record EntraOptions
 
     public string? AdminGroupId { get; init; }
 
+    // When set, only members of this group, holders of a role, or administrators may sign in at all.
+    public string? UserGroupId { get; init; }
+
     public required bool RequireRole { get; init; }
+
+    // Whether someone with neither a role nor a group is turned away rather than let in as a user.
+    public bool AccessIsRestricted => RequireRole || UserGroupId is not null;
 
     // Entra cannot be asked whether an account still exists without a Graph permission, so a session
     // is sent back to Entra this often and a disabled account is noticed there.
@@ -55,6 +61,7 @@ public sealed record EntraOptions
             AdminRole = env.Text("OVP_ENTRA_ADMIN_ROLE", "Admin"),
             UserRole = env.Text("OVP_ENTRA_USER_ROLE", "User"),
             AdminGroupId = env.Optional("OVP_ENTRA_ADMIN_GROUP"),
+            UserGroupId = env.Optional("OVP_ENTRA_USER_GROUP"),
             RequireRole = env.Switch("OVP_ENTRA_REQUIRE_ROLE", false),
             ReauthenticateAfter = TimeSpan.FromHours(env.WholeNumber("OVP_ENTRA_REAUTH_HOURS", 8, 1, 720)),
         };

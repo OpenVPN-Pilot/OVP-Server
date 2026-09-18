@@ -69,5 +69,11 @@ public sealed class ProfileFactory(ISecretCipher cipher, ICurrentUser currentUse
         {
             throw ServiceException.Invalid("name", "A profile needs a name.");
         }
+
+        // A line break in a name would forge lines in the log and in every client's list.
+        if (name.Any(char.IsControl))
+        {
+            throw ServiceException.Invalid("name", "A profile name cannot contain control characters.");
+        }
     }
 }

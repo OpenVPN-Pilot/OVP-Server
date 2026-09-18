@@ -39,7 +39,7 @@ app.MapGet("/{tenant}/discovery/v2.0/keys", (string tenant) =>
     return Results.Json(new { keys = new[] { new { kty = "RSA", use = "sig", kid = Kid, n = B64(p.Modulus!), e = B64(p.Exponent!) } } });
 });
 
-// GET /mint?tenant=&aud=&scp=&roles=a,b&groups=g&oid=&upn=&name=&exp=<minutes>&ver=1|2&rogue=1&noscp=1&iss=
+// GET /mint?tenant=&aud=&azp=&scp=&roles=a,b&groups=g&oid=&upn=&name=&exp=<minutes>&ver=1|2&rogue=1&noscp=1&iss=
 app.MapGet("/mint", (HttpRequest request) =>
 {
     string Q(string name, string fallback) =>
@@ -62,6 +62,7 @@ app.MapGet("/mint", (HttpRequest request) =>
         ["name"] = Q("name", "Lab Person"),
     };
     AddIfSet(claims, v1 ? "upn" : "preferred_username", Q("upn", ""));
+    AddIfSet(claims, v1 ? "appid" : "azp", Q("azp", ""));
     AddListIfSet(claims, "roles", Q("roles", ""));
     AddListIfSet(claims, "groups", Q("groups", ""));
     if (Q("noscp", "0") == "1")

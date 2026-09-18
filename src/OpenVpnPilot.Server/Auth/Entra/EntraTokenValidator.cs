@@ -77,6 +77,15 @@ public sealed class EntraTokenValidator
                 ErrorCodes.InvalidCredentials, $"The Entra ID token does not carry the scope '{options.RequiredScopeName}'.");
         }
 
+        // The audience says the token is for this server; this says which application asked for it. Any
+        // other application in the tenant that was granted the scope could otherwise sign people in here.
+        string? requestedBy = identity.FindFirst("azp")?.Value ?? identity.FindFirst("appid")?.Value;
+        if (requestedBy is not null && !string.Equals(requestedBy, options.ClientId, StringComparison.OrdinalIgnoreCase))
+        {
+            AuthLog.EntraTokenRejected(logger, $"requested by application {requestedBy}, not by {options.ClientId}");
+            throw ServiceException.Unauthorized(ErrorCodes.InvalidCredentials, "The Entra ID token was issued to another application.");
+        }
+
         string objectId = identity.FindFirst("oid")?.Value
             ?? throw ServiceException.Unauthorized(ErrorCodes.InvalidCredentials, "The Entra ID token names no user.");
         string username = identity.FindFirst("preferred_username")?.Value
@@ -84,27 +93,24 @@ public sealed class EntraTokenValidator
             ?? identity.FindFirst("unique_name")?.Value
             ?? objectId;
 
-        UserRole role = RoleOf(identity)
-            ?? throw ServiceException.Forbidden(ErrorCodes.Forbidden, "This account has no role for this server.");
-        return new ExternalIdentity(UsernameRules.Normalise(username), identity.FindFirst("name")?.Value, objectId, role);
+        // Without a role or group where one is required the person is reported as disabled: someone who
+        // lost access is then treated like any revoked account, and someone new is simply refused.
+        UserRole? role = RoleOf(identity);
+        return new ExternalIdentity(
+            UsernameRules.Normalise(username), identity.FindFirst("name")?.Value, objectId, role ?? UserRole.User, Disabled: role is null);
     }
 
     private UserRole? RoleOf(ClaimsIdentity identity)
     {
         HashSet<string> roles = identity.FindAll("roles").Select(c => c.Value).ToHashSet(StringComparer.Ordinal);
-        bool inAdminGroup = options.AdminGroupId is not null
-            && identity.FindAll("groups").Any(c => string.Equals(c.Value, options.AdminGroupId, StringComparison.OrdinalIgnoreCase));
+        HashSet<string> groups = identity.FindAll("groups").Select(c => c.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        if (roles.Contains(options.AdminRole) || inAdminGroup)
+        if (roles.Contains(options.AdminRole) || (options.AdminGroupId is not null && groups.Contains(options.AdminGroupId)))
         {
             return UserRole.Admin;
         }
 
-        if (roles.Contains(options.UserRole) || !options.RequireRole)
-        {
-            return UserRole.User;
-        }
-
-        return null;
+        bool member = roles.Contains(options.UserRole) || (options.UserGroupId is not null && groups.Contains(options.UserGroupId));
+        return member || !options.AccessIsRestricted ? UserRole.User : null;
     }
 }

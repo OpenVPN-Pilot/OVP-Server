@@ -46,6 +46,11 @@ catch (ConfigurationException exception)
     return 2;
 }
 
+if (options.Auth.Mode == AuthMode.None)
+{
+    AuthLog.NoAuthentication(logger, options.Auth.NoneAdmins);
+}
+
 HostingSetup.ReportListeners(logger, options.Tls, certificate, TimeProvider.System);
 
 if (options.Database.MigrateOnStart)

@@ -56,6 +56,11 @@ public sealed class TagAssigner(ITagRepository tags, TimeProvider time)
                 throw ServiceException.Invalid("tags", $"A tag name is at most {MaximumNameLength} characters: '{name[..20]}...'.");
             }
 
+            if (name.Any(char.IsControl))
+            {
+                throw ServiceException.Invalid("tags", "A tag name cannot contain control characters.");
+            }
+
             if (!result.Contains(name, StringComparer.OrdinalIgnoreCase))
             {
                 result.Add(name);

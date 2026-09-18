@@ -10,8 +10,26 @@ public sealed class EnvironmentReader(IConfiguration configuration)
 
     public IReadOnlyList<string> Errors => errors;
 
+    // Every variable can also be given as <NAME>_FILE, the path of a file holding the value, which is
+    // how Docker and Compose secrets arrive. A value in the environment is visible to anyone who may
+    // inspect the container; a file mounted from a secret is not.
     public string? Optional(string name)
     {
+        string? path = configuration[name + "_FILE"];
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            try
+            {
+                string content = File.ReadAllText(path.Trim()).Trim();
+                return content.Length == 0 ? null : content;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                Fail(name + "_FILE", $"points at '{path}', which cannot be read: {exception.Message}");
+                return null;
+            }
+        }
+
         string? value = configuration[name];
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }

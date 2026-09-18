@@ -21,6 +21,7 @@ public static class PipelineSetup
         }
 
         app.UseMiddleware<RequestContextMiddleware>();
+        app.UseMiddleware<SecurityHeadersMiddleware>();
         app.UseSerilogRequestLogging(logging =>
         {
             logging.MessageTemplate = "{RequestMethod} {RequestPath} answered {StatusCode} in {Elapsed:0.0} ms";
@@ -42,8 +43,11 @@ public static class PipelineSetup
         app.UseAuthorization();
 
         app.MapControllers();
+        // live: the process serves requests, which is what a container restart can fix. ready and the plain
+        // /health: it can also reach the database, which is what a load balancer or a monitor asks.
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") }).AllowAnonymous();
+        app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") }).AllowAnonymous();
 
         // An unknown route answers in the same shape as every other refusal, not with an empty body. The
         // pattern includes paths with a dot, which the default fallback leaves out: without it

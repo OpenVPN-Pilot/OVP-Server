@@ -1,5 +1,5 @@
 # Test identity providers, layered over the main Compose file:
-#   docker compose -f docker-compose.yml -f lab/docker-compose.yml up -d --build
+#   docker compose -f docker-compose.yaml -f lab/docker-compose.yaml up -d --build
 # Paths are relative to the repository root, the directory of the first file. Never for production.
 name: ovp-server
 
@@ -36,7 +36,7 @@ services:
     working_dir: /lab/entra-mock
     command: ["dotnet", "run", "mock.cs"]
     volumes:
-      - ./lab/entra-mock:/lab/entra-mock
+      - ./lab/entra-mock:/lab/entra-mock:ro
       - lab-trust:/lab/trust
     healthcheck:
       test: ["CMD", "curl", "-skf", "https://localhost:9443/mint"]

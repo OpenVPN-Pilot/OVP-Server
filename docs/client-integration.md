@@ -38,6 +38,8 @@ it switched on. This page is the contract; where the two ever disagree, this pag
   machine, as for any other internal service.
 - **JSON** with camelCase property names, UTF-8. Request bodies are `application/json`; errors are
   `application/problem+json`.
+- **Nothing is cached.** Every `/api` response says `Cache-Control: no-store`; a client must not keep
+  responses in an HTTP cache either, since they carry tokens, keys and passwords.
 - **Times** are ISO 8601 with an offset, always UTC from the server, for example
   `2026-09-18T09:23:09.4177416+00:00`.
 - **Identifiers** are GUIDs. Profiles created on the server have ids the client has never seen; see
@@ -185,7 +187,8 @@ tokens; the Entra token is not needed again until Entra asks for a new sign in (
 - 503 `auth.provider_unavailable`: the directory or Entra cannot be reached. Keep what is cached,
   keep working offline and try again later.
 - `POST /api/v1/auth/logout` with the refresh token ends this installation's session (204). Discard
-  both tokens afterwards whatever the answer.
+  both tokens afterwards whatever the answer. The access token itself stays valid until it expires,
+  at most one access token lifetime; the client simply stops using it.
 
 ## The wipe directive
 
@@ -258,6 +261,7 @@ for `request.validation_failed`.
 | `auth.mode_mismatch` | 400 | Password sign in on an Entra server or the reverse | Read `server/info` again |
 | `auth.provider_unavailable` | 503 | Directory or Entra unreachable | Stay offline, retry later |
 | `auth.forbidden` | 403 | Not allowed: not an administrator, or not in the allowed group | Hide the action; explain |
+| `auth.identity_conflict` | 409 | Entra ID: this name belongs to another account on the server | Explain; an administrator has to act |
 | `auth.token_missing` | 401 | No access token | Sign in |
 | `auth.token_invalid` | 401 | Token malformed or not signed by this server | Refresh; if that fails, sign in |
 | `auth.token_expired` | 401 | Access token expired | Refresh and repeat |
@@ -526,7 +530,7 @@ group, or the list of administrators in mode `none`), not from this API.
 | POST | `/api/v1/users/{id}/enable` | admin | 200 |
 | POST | `/api/v1/users/{id}/revoke-tokens` | admin | 200 |
 | DELETE | `/api/v1/users/{id}?purge=` | admin | 204 |
-| GET | `/health/live`, `/health/ready` | anyone, no headers | 200 |
+| GET | `/health`, `/health/live`, `/health/ready` | anyone, no headers | 200 |
 
 ## Mapping onto the client's model
 

@@ -38,6 +38,14 @@ services:
     environment:
       OVP_DB_HOST: postgres
       TZ: ${TZ:-UTC}
+    # The same check the image declares, spelled out here so it is visible. It asks /health/live through
+    # the server binary, because the runtime image has no curl, and follows OVP_TLS_MODE by itself.
+    healthcheck:
+      test: ["CMD", "dotnet", "OpenVpnPilot.Server.dll", "healthcheck"]
+      interval: 30s
+      timeout: 8s
+      start_period: 40s
+      retries: 3
     ports:
       - "${OVP_PUBLISH_PORT:-8443}:${OVP_CONTAINER_PORT:-8443}"
     volumes:

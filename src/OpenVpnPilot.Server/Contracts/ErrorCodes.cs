@@ -31,6 +31,7 @@ public static class ErrorCodes
     public const string RefreshTokenReused = "auth.refresh_token_reused";
     public const string ReauthenticationRequired = "auth.reauthentication_required";
     public const string Forbidden = "auth.forbidden";
+    public const string IdentityConflict = "auth.identity_conflict";
 
     // Sent together with the wipe directive.
     public const string AccountRevoked = "account.revoked";

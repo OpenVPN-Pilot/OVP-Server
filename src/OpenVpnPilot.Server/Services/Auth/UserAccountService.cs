@@ -25,7 +25,7 @@ public sealed class UserAccountService(
     public async Task<User> ResolveAsync(ExternalIdentity identity, AuthProviderKind provider, CancellationToken cancellationToken)
     {
         DateTimeOffset now = time.GetUtcNow();
-        User? user = await users.FindByUsernameAsync(identity.Username, cancellationToken);
+        User? user = await FindExistingAsync(identity, provider, cancellationToken);
         if (user is null && identity.Disabled)
         {
             // Nothing was ever handed to this account, so there is nothing to erase and nothing to record.
@@ -57,6 +57,42 @@ public sealed class UserAccountService(
         ProviderAccountStatus status = identity.Disabled ? ProviderAccountStatus.Disabled : ProviderAccountStatus.Active(identity.Role);
         await ApplyAsync(user, status, cancellationToken);
         return user;
+    }
+
+    // Entra's object id never changes and is never reused, while the user principal name can be renamed
+    // and later given to someone else. The id therefore decides who a record belongs to, and a known
+    // name arriving with a different id is refused rather than handed another person's record. A
+    // directory's distinguished name changes whenever an account moves, so there the name decides.
+    private async Task<User?> FindExistingAsync(ExternalIdentity identity, AuthProviderKind provider, CancellationToken cancellationToken)
+    {
+        User? byName = await users.FindByUsernameAsync(identity.Username, cancellationToken);
+        if (provider != AuthProviderKind.Entra || identity.ExternalId is null)
+        {
+            return byName;
+        }
+
+        User? byId = await users.FindByExternalIdAsync(provider, identity.ExternalId, cancellationToken);
+        if (byId is null && byName is { Provider: AuthProviderKind.Entra, ExternalId: not null } && byName.ExternalId != identity.ExternalId)
+        {
+            AuthLog.IdentityConflict(logger, identity.Username, byName.ExternalId, identity.ExternalId);
+            throw ServiceException.Conflict(ErrorCodes.IdentityConflict,
+                "This name belongs to another account on this server. An administrator has to remove that account first.");
+        }
+
+        if (byId is not null && byName is not null && byName.Id != byId.Id)
+        {
+            AuthLog.IdentityConflict(logger, identity.Username, byName.ExternalId, identity.ExternalId);
+            throw ServiceException.Conflict(ErrorCodes.IdentityConflict,
+                "This account was renamed to a name another account on this server holds. An administrator has to remove that account first.");
+        }
+
+        if (byId is not null && !string.Equals(byId.Username, identity.Username, StringComparison.OrdinalIgnoreCase))
+        {
+            AuthLog.UserRenamed(logger, byId.Username, identity.Username);
+            byId.Username = identity.Username;
+        }
+
+        return byId ?? byName;
     }
 
     public async Task ApplyAsync(User user, ProviderAccountStatus status, CancellationToken cancellationToken)

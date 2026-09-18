@@ -4,6 +4,11 @@ Everything is set through environment variables, which Compose reads from `.env`
 all of them at start and, when something is wrong, stops with one line per problem naming the
 variable, rather than failing on the first request that needs it. An empty value counts as unset.
 
+Every variable can also be given as `<NAME>_FILE`, the path of a file that holds the value, which is
+how Docker and Compose secrets arrive: `OVP_DATA_KEY_FILE=/run/secrets/ovp_data_key`. A value in the
+environment is visible to anyone who may inspect the container; a mounted secret is not. Use it at
+least for `OVP_DATA_KEY`, `OVP_JWT_SIGNING_KEY`, `OVP_DB_PASSWORD` and `OVP_LDAP_BIND_PASSWORD`.
+
 ## Database
 
 | Variable | Default | |
@@ -62,7 +67,7 @@ variable, rather than failing on the first request that needs it. An empty value
 | `OVP_LDAP_USER_FILTER` | see below | Must contain `{0}` for the escaped user name |
 | `OVP_LDAP_DISPLAY_NAME_ATTRIBUTE` | `displayName` or `cn` | |
 | `OVP_LDAP_ADMIN_GROUP` | required | DN of the group whose members are administrators |
-| `OVP_LDAP_USER_GROUP` | | DN of the group whose members may sign in at all. Unset: everyone found by the filter |
+| `OVP_LDAP_USER_GROUP` | | DN of the group whose members may sign in as users. Unset: everyone the filter finds may sign in. Administrators need not be in it |
 
 The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Directory and
 `(&(objectClass=inetOrgPerson)(uid={0}))` otherwise.
@@ -79,7 +84,8 @@ The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Dir
 | `OVP_ENTRA_ADMIN_ROLE` | `Admin` | App role value that makes an administrator |
 | `OVP_ENTRA_USER_ROLE` | `User` | App role value that makes a user |
 | `OVP_ENTRA_ADMIN_GROUP` | | Object id of a group whose members are administrators, as an alternative to the role |
-| `OVP_ENTRA_REQUIRE_ROLE` | `false` | `true`: signing in needs the user or admin role; otherwise everyone in the tenant is a user |
+| `OVP_ENTRA_USER_GROUP` | | Object id of a group whose members may sign in as users, as an alternative to the role. When set, nobody else may sign in |
+| `OVP_ENTRA_REQUIRE_ROLE` | `false` | `true`: signing in needs a role or one of the two groups. With neither this nor `OVP_ENTRA_USER_GROUP`, everyone in the tenant is a user |
 | `OVP_ENTRA_REAUTH_HOURS` | `8` | How long a session lasts before the client must sign in with Entra again |
 
 ## Clients
