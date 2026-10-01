@@ -10,6 +10,8 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-01
+
 ### Added
 
 - **The server itself**: a REST API under `/api/v1` for OpenVPN Pilot's remote mode, one ASP.NET Core

@@ -12,10 +12,11 @@ connecting; the server never starts a tunnel and never sees one.
 It is a REST API in one ASP.NET Core project, runs in Docker Compose next to PostgreSQL, and signs
 people in with a name only, a YAML user list, LDAP or Active Directory, or Entra ID.
 
-> **Status: in development, version 0.1.0.** Every endpoint works against the Compose stack. Sign in is
-> proven against OpenLDAP, against a Samba 4 Active Directory domain controller, and against a stand-in
-> for Entra ID in [`lab/`](lab/docker-compose.yaml); a real Entra ID tenant has not been tried. The client
-> does not speak to it yet. See [Roadmap](#roadmap).
+> **Status: version 1.0.0.** Every endpoint is tested against the Compose stack, including
+> synchronisation and refresh under concurrent requests. Sign in is proven against OpenLDAP, against a
+> Samba 4 Active Directory domain controller, and against a stand-in for Entra ID in
+> [`lab/`](lab/docker-compose.yaml); a real Entra ID tenant has not been tried yet. The desktop client
+> does not speak to it yet; its remote mode is next. See [Roadmap](#roadmap).
 
 ## Documentation
 
@@ -48,9 +49,12 @@ people in with a name only, a YAML user list, LDAP or Active Directory, or Entra
 
 ## Quick start
 
+You need Docker with Compose v2 and a TLS certificate for the name clients reach the server by.
+
 ```bash
 git clone https://github.com/OpenVPN-Pilot/OVP-Server.git && cd OVP-Server
 cp .env.example .env                        # fill in OVP_DB_PASSWORD, OVP_DATA_KEY, OVP_JWT_SIGNING_KEY
+                                            # (openssl rand -base64 32 for each key)
 cp config/users.example.yaml config/users.yaml
 docker compose run --rm api hash-password   # put the hashes into users.yaml
 # put server.crt and server.key into ./certs
