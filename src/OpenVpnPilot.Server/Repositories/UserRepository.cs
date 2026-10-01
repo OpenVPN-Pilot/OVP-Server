@@ -35,6 +35,15 @@ public sealed class RefreshTokenRepository(PilotServerDbContext db) : IRefreshTo
 
     public void Add(RefreshToken token) => db.RefreshTokens.Add(token);
 
+    public void Discard(RefreshToken token) => db.Entry(token).State = EntityState.Detached;
+
+    // One statement, so of two refreshes racing with the same token exactly one finds it unclaimed: the
+    // second waits for the first one's row lock and then sees the token already replaced.
+    public async Task<bool> TryClaimAsync(Guid id, Guid replacementId, CancellationToken cancellationToken) =>
+        await db.RefreshTokens
+            .Where(t => t.Id == id && t.ReplacedById == null && t.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.ReplacedById, replacementId), cancellationToken) == 1;
+
     public Task<int> RevokeFamilyAsync(Guid familyId, DateTimeOffset at, CancellationToken cancellationToken) =>
         db.RefreshTokens
             .Where(t => t.FamilyId == familyId && t.RevokedAt == null)

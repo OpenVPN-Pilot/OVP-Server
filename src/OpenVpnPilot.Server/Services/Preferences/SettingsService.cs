@@ -12,7 +12,7 @@ public interface ISettingsService
 {
     public Task<SettingsResponse> GetAsync(CancellationToken cancellationToken);
 
-    public Task<SettingsResponse> ReplaceAsync(SettingsRequest request, uint? expectedVersion, CancellationToken cancellationToken);
+    public Task<SettingsResponse> ReplaceAsync(SettingsRequest request, IfMatch? precondition, CancellationToken cancellationToken);
 }
 
 public sealed class SettingsService(
@@ -34,7 +34,7 @@ public sealed class SettingsService(
 
     // If-Match is optional here: settings belong to one person, and a client that does not care which
     // of its own machines wrote last may simply overwrite.
-    public async Task<SettingsResponse> ReplaceAsync(SettingsRequest request, uint? expectedVersion, CancellationToken cancellationToken)
+    public async Task<SettingsResponse> ReplaceAsync(SettingsRequest request, IfMatch? precondition, CancellationToken cancellationToken)
     {
         if (request.Document.ValueKind != JsonValueKind.Object)
         {
@@ -42,7 +42,8 @@ public sealed class SettingsService(
         }
 
         string json = request.Document.GetRawText();
-        if (System.Text.Encoding.UTF8.GetByteCount(json) > MaximumBytes)
+        int bytes = System.Text.Encoding.UTF8.GetByteCount(json);
+        if (bytes > MaximumBytes)
         {
             throw ServiceException.Invalid("document", $"The settings document is larger than {MaximumBytes / 1024} KiB.");
         }
@@ -50,7 +51,7 @@ public sealed class SettingsService(
         UserSettingsDocument? stored = await preferences.SettingsAsync(currentUser.Id, cancellationToken);
         if (stored is null)
         {
-            if (expectedVersion is not null)
+            if (precondition is not null)
             {
                 throw ServiceException.PreconditionFailed("No settings are stored yet, so there is no version to match.");
             }
@@ -58,16 +59,21 @@ public sealed class SettingsService(
             stored = new UserSettingsDocument { UserId = currentUser.Id };
             preferences.AddSettings(stored);
         }
-        else if (expectedVersion is not null)
+        else if (precondition is not null)
         {
-            preferences.ExpectSettingsVersion(stored, expectedVersion.Value);
+            if (!precondition.Matches(stored.Version))
+            {
+                throw ServiceException.PreconditionFailed("Another machine stored settings since they were read. Read them again.");
+            }
+
+            preferences.ExpectSettingsVersion(stored, stored.Version);
         }
 
         stored.SchemaVersion = request.SchemaVersion;
         stored.Document = json;
         stored.UpdatedAt = time.GetUtcNow();
         await unitOfWork.SaveChangesAsync(cancellationToken);
-        PreferenceLog.SettingsStored(logger, currentUser.Username, request.SchemaVersion, json.Length);
+        PreferenceLog.SettingsStored(logger, currentUser.Username, request.SchemaVersion, bytes);
         return ToResponse(stored);
     }
 

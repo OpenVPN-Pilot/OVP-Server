@@ -25,6 +25,12 @@ public interface IRefreshTokenRepository
 
     public void Add(RefreshToken token);
 
+    // Forgets a token that was added but must not be stored after all.
+    public void Discard(RefreshToken token);
+
+    // Marks the token as replaced unless it already was; false means another refresh got there first.
+    public Task<bool> TryClaimAsync(Guid id, Guid replacementId, CancellationToken cancellationToken);
+
     public Task<int> RevokeFamilyAsync(Guid familyId, DateTimeOffset at, CancellationToken cancellationToken);
 
     public Task<int> RevokeAllForUserAsync(Guid userId, DateTimeOffset at, CancellationToken cancellationToken);

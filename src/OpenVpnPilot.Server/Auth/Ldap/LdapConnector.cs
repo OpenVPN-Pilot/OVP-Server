@@ -20,7 +20,7 @@ public sealed class LdapConnector
             : X509CertificateLoader.LoadCertificateFromFile(options.CaCertificatePath);
     }
 
-    public async Task<LdapConnection> OpenAsync()
+    public async Task<LdapConnection> OpenAsync(CancellationToken cancellationToken)
     {
         LdapConnectionOptions connectionOptions = new LdapConnectionOptions()
             .ConfigureRemoteCertificateValidationCallback(ValidateCertificate);
@@ -32,10 +32,10 @@ public sealed class LdapConnector
         LdapConnection connection = new(connectionOptions) { ConnectionTimeout = 10_000 };
         try
         {
-            await connection.ConnectAsync(options.Host, options.Port);
+            await connection.ConnectAsync(options.Host, options.Port, cancellationToken);
             if (options.Security == LdapSecurity.StartTls)
             {
-                await connection.StartTlsAsync();
+                await connection.StartTlsAsync(cancellationToken);
             }
 
             return connection;
@@ -47,12 +47,12 @@ public sealed class LdapConnector
         }
     }
 
-    public async Task<LdapConnection> OpenAsServiceAsync()
+    public async Task<LdapConnection> OpenAsServiceAsync(CancellationToken cancellationToken)
     {
-        LdapConnection connection = await OpenAsync();
+        LdapConnection connection = await OpenAsync(cancellationToken);
         try
         {
-            await connection.BindAsync(options.BindDn, options.BindPassword);
+            await connection.BindAsync(options.BindDn, options.BindPassword, cancellationToken);
             return connection;
         }
         catch

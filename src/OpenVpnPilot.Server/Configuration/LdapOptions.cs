@@ -67,7 +67,26 @@ public sealed record LdapOptions
         {
             env.Fail("OVP_LDAP_CA_CERT_PATH", $"points at '{options.CaCertificatePath}', which does not exist.");
         }
+        else if (options.CaCertificatePath is not null)
+        {
+            RequireCertificate(env, options.CaCertificatePath);
+        }
 
         return options;
+    }
+
+    // Read once here so a file that is not a certificate stops the start with the variable's name,
+    // rather than the first sign in with a stack trace.
+    private static void RequireCertificate(EnvironmentReader env, string path)
+    {
+        try
+        {
+            using System.Security.Cryptography.X509Certificates.X509Certificate2 certificate =
+                System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadCertificateFromFile(path);
+        }
+        catch (System.Security.Cryptography.CryptographicException exception)
+        {
+            env.Fail("OVP_LDAP_CA_CERT_PATH", $"points at '{path}', which is not a certificate: {exception.Message}");
+        }
     }
 }

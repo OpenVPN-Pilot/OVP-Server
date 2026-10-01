@@ -40,6 +40,9 @@ internal static partial class HostLog
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning, Message = "Could not delete log folder {Folder}; it is tried again in an hour")]
     public static partial void LogFolderNotDeleted(ILogger logger, string folder, Exception exception);
 
+    [LoggerMessage(EventId = 1104, Level = LogLevel.Warning, Message = "Could not list the log folder {Folder}; it is tried again in an hour")]
+    public static partial void LogFolderUnreadable(ILogger logger, string folder, Exception exception);
+
     [LoggerMessage(EventId = 1102, Level = LogLevel.Information,
         Message = "Maintenance removed {Tokens} expired refresh token(s) and {Tombstones} old deletion record(s)")]
     public static partial void MaintenanceDone(ILogger logger, int tokens, int tombstones);

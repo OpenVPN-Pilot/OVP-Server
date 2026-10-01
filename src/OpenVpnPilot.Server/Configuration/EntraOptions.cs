@@ -49,10 +49,17 @@ public sealed record EntraOptions
             env.Fail("OVP_ENTRA_INSTANCE", $"must be an https URL such as https://login.microsoftonline.com, was '{instance}'.");
         }
 
+        // The issuer of every token names the tenant by its id, so a domain name here would match none.
+        string tenantId = env.Required("OVP_ENTRA_TENANT_ID");
+        if (tenantId.Length > 0 && !Guid.TryParse(tenantId, out _))
+        {
+            env.Fail("OVP_ENTRA_TENANT_ID", $"must be the directory (tenant) id, a GUID, not '{tenantId}'.");
+        }
+
         return new EntraOptions
         {
             Instance = instance,
-            TenantId = env.Required("OVP_ENTRA_TENANT_ID"),
+            TenantId = tenantId,
             ClientId = clientId,
             Audiences = audience.StartsWith("api://", StringComparison.Ordinal)
                 ? [audience, audience["api://".Length..]]

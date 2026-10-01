@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using OpenVpnPilot.Server.Auth;
 using OpenVpnPilot.Server.Auth.Tokens;
 using OpenVpnPilot.Server.Contracts;
@@ -26,7 +27,12 @@ public sealed class AccountRevocationMiddleware(RequestDelegate next, ILogger<Ac
         IDiagnosticContext diagnostics)
     {
         ClaimsPrincipal principal = context.User;
-        if (principal.Identity?.IsAuthenticated != true)
+
+        // Signing in, refreshing and asking for server information must work whatever access token a
+        // client still sends along: refresh is how a revoked token is replaced, and those endpoints judge
+        // the account themselves.
+        bool anonymous = context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null;
+        if (principal.Identity?.IsAuthenticated != true || anonymous)
         {
             await next(context);
             return;

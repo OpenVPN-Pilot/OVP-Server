@@ -45,7 +45,7 @@ public sealed class AuthController(IAuthService auth, ISessionService sessions, 
     /// </remarks>
     [HttpPost("refresh")]
     [AllowAnonymous]
-    [EnableRateLimiting(AuthorizationPolicies.SignInRateLimit)]
+    [EnableRateLimiting(AuthorizationPolicies.RefreshRateLimit)]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     public Task<TokenResponse> Refresh(RefreshRequest request, CancellationToken cancellationToken) =>

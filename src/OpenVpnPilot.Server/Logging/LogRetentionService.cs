@@ -31,7 +31,19 @@ public sealed class LogRetentionService(
         DateOnly today = DateOnly.FromDateTime(time.GetLocalNow().DateTime);
         DateOnly oldestKept = today.AddDays(-options.RetentionDays);
 
-        foreach (string folder in Directory.EnumerateDirectories(options.Directory))
+        string[] folders;
+        try
+        {
+            folders = Directory.GetDirectories(options.Directory);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // An unreadable log folder must not stop the server; the next pass tries again.
+            HostLog.LogFolderUnreadable(logger, options.Directory, exception);
+            return;
+        }
+
+        foreach (string folder in folders)
         {
             string name = Path.GetFileName(folder);
             if (!DateOnly.TryParseExact(name, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly day)

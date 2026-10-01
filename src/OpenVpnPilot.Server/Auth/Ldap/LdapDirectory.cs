@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using Novell.Directory.Ldap;
 using OpenVpnPilot.Server.Configuration;
@@ -6,7 +7,26 @@ namespace OpenVpnPilot.Server.Auth.Ldap;
 
 public sealed record LdapUserEntry(string Dn, string? DisplayName, bool Disabled);
 
-public sealed class LdapDirectory(AuthOptions auth)
+public enum LdapMatch
+{
+    Found,
+    NotFound,
+    Ambiguous,
+}
+
+public sealed record LdapUserLookup(LdapMatch Match, LdapUserEntry? Entry, int Count);
+
+// A group named in the configuration that the directory does not have. Membership of it cannot be
+// decided, and answering "not a member" would lock out and wipe everyone who should be in it.
+public sealed class LdapGroupMissingException(string variable, string groupDn)
+    : Exception($"{variable} names '{groupDn}', which the directory does not have.")
+{
+    public string Variable { get; } = variable;
+
+    public string GroupDn { get; } = groupDn;
+}
+
+public sealed class LdapDirectory(AuthOptions auth, ILogger<LdapDirectory> logger)
 {
     // Active Directory's LDAP_MATCHING_RULE_IN_CHAIN: membership through nested groups counts too.
     private const string InChain = "1.2.840.113556.1.4.1941";
@@ -16,57 +36,87 @@ public sealed class LdapDirectory(AuthOptions auth)
 
     private readonly LdapOptions options = auth.Ldap ?? throw new InvalidOperationException("LDAP options are missing.");
 
-    public async Task<LdapUserEntry?> FindUserAsync(LdapConnection connection, string username)
+    // Groups only ever confirmed, never cached as missing, so a group created after a typo is fixed in
+    // the directory is found on the next request.
+    private readonly ConcurrentDictionary<string, bool> confirmedGroups = new(StringComparer.OrdinalIgnoreCase);
+
+    public async Task<LdapUserLookup> FindUserAsync(LdapConnection connection, string username, CancellationToken cancellationToken)
     {
         string[] attributes = [options.DisplayNameAttribute, "userAccountControl"];
         ILdapSearchResults results = await connection.SearchAsync(
-            options.BaseDn, LdapConnection.ScopeSub, LdapFilter.ForUser(options.UserFilter, username), attributes, false);
+            options.BaseDn, LdapConnection.ScopeSub, LdapFilter.ForUser(options.UserFilter, username), attributes, false, cancellationToken);
 
         List<LdapEntry> entries = [];
-        while (await results.HasMoreAsync())
+        while (await results.HasMoreAsync(cancellationToken))
         {
             try
             {
-                entries.Add(await results.NextAsync());
+                entries.Add(await results.NextAsync(cancellationToken));
             }
             catch (LdapReferralException)
             {
                 // Active Directory answers a search from the domain root with references to its other
                 // partitions (Configuration, DomainDnsZones, ForestDnsZones). None of them holds the
                 // domain's users, and following them would mean binding to other servers.
+                AuthLog.ReferralSkipped(logger, options.BaseDn);
             }
         }
 
         // More than one match means the filter is ambiguous, and guessing would sign in the wrong person.
         if (entries.Count != 1)
         {
-            return null;
+            return new LdapUserLookup(entries.Count == 0 ? LdapMatch.NotFound : LdapMatch.Ambiguous, null, entries.Count);
         }
 
         LdapEntry entry = entries[0];
-        return new LdapUserEntry(entry.Dn, Read(entry, options.DisplayNameAttribute), IsDisabled(entry));
+        return new LdapUserLookup(LdapMatch.Found, new LdapUserEntry(entry.Dn, Read(entry, options.DisplayNameAttribute), IsDisabled(entry)), 1);
     }
 
-    public async Task<bool> IsMemberAsync(LdapConnection connection, string userDn, string groupDn)
+    public async Task<bool> IsMemberAsync(
+        LdapConnection connection, string userDn, string groupDn, string variable, CancellationToken cancellationToken)
     {
+        // Active Directory's memberOf filter matches nothing for a group that does not exist, without an
+        // error, so existence is asked separately.
+        await RequireGroupAsync(connection, groupDn, variable, cancellationToken);
+
         (string searchBase, string filter) = options.ActiveDirectory
             ? (userDn, $"(memberOf:{InChain}:={LdapFilter.Escape(groupDn)})")
             : (groupDn, $"(|(member={LdapFilter.Escape(userDn)})(uniqueMember={LdapFilter.Escape(userDn)}))");
 
-        ILdapSearchResults results = await connection.SearchAsync(searchBase, LdapConnection.ScopeBase, filter, ["dn"], false);
-        bool found = false;
-        while (await results.HasMoreAsync())
+        return await AnyAsync(connection, searchBase, filter, cancellationToken);
+    }
+
+    private async Task RequireGroupAsync(LdapConnection connection, string groupDn, string variable, CancellationToken cancellationToken)
+    {
+        if (confirmedGroups.ContainsKey(groupDn))
         {
-            try
+            return;
+        }
+
+        try
+        {
+            if (!await AnyAsync(connection, groupDn, "(objectClass=*)", cancellationToken))
             {
-                await results.NextAsync();
-                found = true;
+                throw new LdapGroupMissingException(variable, groupDn);
             }
-            catch (LdapException exception) when (exception.ResultCode == LdapException.NoSuchObject)
-            {
-                // A group that does not exist has no members; the configuration check reports it.
-                return false;
-            }
+        }
+        catch (LdapException exception) when (exception.ResultCode == LdapException.NoSuchObject)
+        {
+            throw new LdapGroupMissingException(variable, groupDn);
+        }
+
+        confirmedGroups[groupDn] = true;
+    }
+
+    private static async Task<bool> AnyAsync(LdapConnection connection, string searchBase, string filter, CancellationToken cancellationToken)
+    {
+        ILdapSearchResults results = await connection.SearchAsync(
+            searchBase, LdapConnection.ScopeBase, filter, ["dn"], false, cancellationToken);
+        bool found = false;
+        while (await results.HasMoreAsync(cancellationToken))
+        {
+            await results.NextAsync(cancellationToken);
+            found = true;
         }
 
         return found;

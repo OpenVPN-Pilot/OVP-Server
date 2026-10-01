@@ -46,6 +46,10 @@ it switched on. This page is the contract; where the two ever disagree, this pag
   [Mapping](#mapping-onto-the-clients-model).
 - All paths start with `/api/v1`. The version is in the path and in a header, and a server that
   speaks a different version refuses rather than guessing.
+- **Body size.** A batch import may be up to 64 MiB, every other request up to 30 MB. A larger body is
+  refused with 413 `request.too_large`. The server may close the connection while a client is still
+  sending, so the client may see a reset connection instead of the answer; keep batches under the
+  limit rather than relying on the answer.
 
 ## First contact
 
@@ -126,8 +130,12 @@ refresh and Entra exchange has the same shape:
 ```
 
 A wrong name or password is 401 `auth.invalid_credentials`, and the two cannot be told apart. An LDAP
-account outside the group the operator allows is 403 `auth.forbidden`. More than a few attempts a
-minute from one address are 429 `request.too_many` with `Retry-After`.
+account outside the group the operator allows is 403 `auth.forbidden`. More attempts a minute from one
+address than the operator allows (10 by default, sign in and Entra exchange together) are 429
+`request.too_many` with `Retry-After` in seconds.
+
+Sign in, Entra exchange, refresh, sign out and `server/info` do not look at an `Authorization` header.
+A client that sends its old access token along by default does no harm there.
 
 ### Mode `entra`
 
@@ -175,7 +183,10 @@ tokens; the Entra token is not needed again until Entra asks for a new sign in (
   before using the new access token. Presenting a refresh token a second time is taken as theft: the
   whole session is ended and the answer is 401 `auth.refresh_token_reused`. The client must therefore
   never refresh twice at the same time. Put the refresh behind a single lock and let every other call
-  wait for its result.
+  wait for its result. Two refreshes with the same token that arrive at the same moment count as reuse
+  too: one gets the new pair, the other `auth.refresh_token_reused`, and the session ends for both.
+- Refresh is limited to 30 calls a minute per installation (`X-Pilot-Client-Id`), separately from sign
+  in, so a team behind one address is never throttled. A 429 here means the client refreshes in a loop.
 - 401 `auth.token_revoked` on an ordinary call means the account changed (for example its role) and
   the token was withdrawn. Refresh once and repeat; the new token carries the new role.
 - 401 `auth.refresh_token_invalid` (unknown, expired or signed out) or `auth.refresh_token_reused`:
@@ -223,6 +234,17 @@ The directive is only ever sent in answer to a token the server itself signed, o
 password, so a stranger cannot trigger it. It only travels over HTTPS. A client that is offline when
 the account is removed receives it the next time it reaches the server.
 
+Two cases where a client is told to sign in instead, and so keeps its copy until it does:
+
+- The administrator purged the user (`DELETE /api/v1/users/{id}?purge=true`). With the record gone the
+  server no longer recognises the account's refresh tokens, and answers `auth.refresh_token_invalid`.
+- An account disabled in Active Directory, when the client's refresh token has already expired. The
+  directory refuses a disabled account's password, so it cannot be proven, and the answer is
+  `auth.invalid_credentials`.
+
+A client that is told to sign in and cannot, because the account is gone, should therefore offer the user
+to remove this server and what came from it.
+
 ## Errors
 
 Every refusal is RFC 9457 problem details:
@@ -249,8 +271,9 @@ for `request.validation_failed`.
 | `request.not_found` | 404 | No such route | Defect |
 | `request.precondition_required` | 428 | A profile update without `If-Match` | Send the ETag |
 | `request.precondition_failed` | 412 | Someone changed it since it was read | Read again, reapply, retry |
-| `request.conflict` | 409 | Collided with a change at the same moment | Retry |
-| `request.too_many` | 429 | Too many sign in attempts from this address | Wait `Retry-After` seconds |
+| `request.conflict` | 409 | Collided with a change at the same moment, or referred to a profile deleted at that moment | Retry; the retry then answers what is wrong |
+| `request.too_large` | 413 | The body is larger than the endpoint accepts | Send less at once, for example split a batch |
+| `request.too_many` | 429 | Too many sign in attempts from this address, or refreshes from this installation | Wait `Retry-After` seconds |
 | `transport.https_required` | 400 | Arrived without HTTPS | Configuration error; use `https://` |
 | `pilot.header_missing` | 400 | A mandatory header is absent | Defect |
 | `pilot.header_invalid` | 400 | A mandatory header is malformed | Defect |
@@ -259,7 +282,7 @@ for `request.validation_failed`.
 | `pilot.clock_skew` | 400 | The machine's clock is off | Tell the user to fix the clock |
 | `auth.invalid_credentials` | 401 | Wrong name or password, or an Entra token that was not accepted | Ask again |
 | `auth.mode_mismatch` | 400 | Password sign in on an Entra server or the reverse | Read `server/info` again |
-| `auth.provider_unavailable` | 503 | Directory or Entra unreachable | Stay offline, retry later |
+| `auth.provider_unavailable` | 503 | Directory or Entra unreachable, or the directory not set up as the server expects | Stay offline, retry later; never wipe |
 | `auth.forbidden` | 403 | Not allowed: not an administrator, or not in the allowed group | Hide the action; explain |
 | `auth.identity_conflict` | 409 | Entra ID: this name belongs to another account on the server | Explain; an administrator has to act |
 | `auth.token_missing` | 401 | No access token | Sign in |
@@ -273,7 +296,7 @@ for `request.validation_failed`.
 | `account.revoked` | 401 | Account disabled or removed; comes with the wipe directive | [Wipe](#the-wipe-directive) |
 | `profile.not_found` | 404 | No such profile | Drop it locally |
 | `profile.duplicate` | 409 | Another profile has exactly this configuration | Show which one |
-| `profile.invalid_configuration` | 400 | Empty, too large or an unclosed block | Show the detail |
+| `profile.invalid_configuration` | 400 | Empty, larger than 256 KiB, an unclosed block, a remote host over 255 characters, or credentials in an `<auth-user-pass>` block | Show the detail |
 | `profile.not_self_contained` | 400 | A directive names a file instead of an inline block | Import locally first, which inlines files |
 | `profile.no_server_verification` | 400 | No `ca`, `capath`, `pkcs12` or `peer-fingerprint` | Show the detail |
 | `tag.not_found` | 404 | No such tag | Refresh the tag list |
@@ -347,6 +370,13 @@ The cursor is only valid for the server that issued it; keep one per server.
 
 The call is cheap when nothing changed: an empty delta and the same cursor.
 
+Apply an answer in the order above, entries before deletions. An entry and a deletion of the same key
+never arrive in one answer: a vault entry deleted and added again is reported as the entry alone.
+
+Favourites, shortcuts and settings are not part of this feed. Read `/me/favourites`, `/me/hotkeys` and
+`/me/settings` at start, after signing in, and whenever a synchronisation reported deleted profiles,
+since deleting a profile removes it from everyone's favourites (see below).
+
 ## Profiles and tags
 
 ### Reading
@@ -361,6 +391,21 @@ The call is cheap when nothing changed: an empty delta and the same cursor.
   ```
 
   Every read of a configuration is recorded in the server log with who read it.
+
+### How the server reads a configuration
+
+The server reads lines, quotes, inline blocks and directives exactly as the client's `OvpnConfigParser`
+does, and derives the list fields as `OvpnConfiguration` and `ProfileConfigurationFacts` do:
+
+- Lines end at `\r\n`, `\n` or a lone `\r`. Lines starting with `#` or `;` are comments.
+- Arguments may be quoted with `"` or `'`; the quotes are not part of the value.
+- Directive names are case sensitive and taken as written.
+- `remoteHost` is the first argument of the first `remote`. `remotePort` is that remote's second
+  argument, else the first `rport`, else the first `port`, else 1194. `protocol` is the remote's third
+  argument, else the first `proto`; `tcp` when it starts with `tcp` regardless of case, else `udp`.
+- Server verification counts as present with an inline `<ca>` or `<pkcs12>` block, or a `ca`, `capath`,
+  `peer-fingerprint` or `pkcs12` directive. An inline `<peer-fingerprint>` block alone does not count,
+  as it does not in the client.
 
 A profile:
 
@@ -394,10 +439,18 @@ A profile:
   ```
 
   The configuration must be self contained, which is what the client's importer produces: every
-  `ca`, `cert`, `key`, `tls-auth`, `tls-crypt`, `pkcs12` and the rest inline, no `auth-user-pass`
-  file. So the upload path is: import locally with the existing wizard, then send each accepted
-  configuration. Tags that do not exist are created. 201 with the profile; 409 `profile.duplicate`
-  when an identical configuration is stored.
+  `ca`, `cert`, `key`, `dh`, `extra-certs`, `pkcs12`, `crl-verify`, `secret`, `tls-auth`, `tls-crypt`
+  and `tls-crypt-v2` as an inline block (`dh none` is fine). So the upload path is: import locally with
+  the existing wizard, then send each accepted configuration. Tags that do not exist are created. 201
+  with the profile; 409 `profile.duplicate` when an identical configuration is stored.
+
+  **The server stores the configuration in one respect differently from how it was sent:** a line
+  `auth-user-pass <file>` becomes a bare `auth-user-pass`. The file holds a user name and password,
+  which belong in the vault, and exists on no other machine; the bare directive makes OpenVPN ask, and
+  the client answers from the vault as for any other profile. Every other byte is kept. The answer's
+  `contentHash` is therefore the hash of what was stored, which differs from the local copy's hash
+  when the line was rewritten. Take the configuration and hash from the server for the server copy;
+  sending the same local profile again is still recognised as a duplicate.
 - `POST /api/v1/profiles/batch` takes `{ "items": [ ...up to 500 of the above... ] }` and judges each
   item on its own:
 
@@ -407,10 +460,17 @@ A profile:
                { "index": 1, "outcome": "duplicate", "profile": null, "code": "profile.duplicate", "detail": "..." } ] }
   ```
 
-  This is the server side of bulk import and maps onto the import wizard's review list.
+  This is the server side of bulk import and maps onto the import wizard's review list. Every limit of
+  a single profile is checked per item, so one item with a name that is too long, a malformed colour or
+  even `null` is `rejected` with its code and detail, and the others are still created. An item
+  identical to an earlier item of the same batch that was created is a `duplicate`. The whole call is
+  refused only when `items` is missing, empty or longer than 500 (400), or the body is over 64 MiB
+  (413). Split a large import into batches by count and by size.
 - `PUT /api/v1/profiles/{id}` replaces name, notes, colour, route protection and tags, and the
   configuration when `configuration` is not null. It requires `If-Match: "<eTag>"`: without it 428,
-  with a stale one 412, in which case read the profile again, reapply and retry.
+  with a stale one 412, in which case read the profile again, reapply and retry. `If-Match` follows
+  RFC 9110: `*` matches whatever is stored, a comma separated list matches when any of its tags does,
+  and a malformed value matches nothing (412), it is never taken as absent.
 - `DELETE /api/v1/profiles/{id}` deletes it together with its vault entries (204).
 
 Tags: `GET /api/v1/tags`; administrators `POST`, `PUT /{id}` and `DELETE /{id}` with
@@ -421,7 +481,10 @@ tag counts as a change of every profile carrying it, so those arrive in the next
 
 One sign in per profile and realm, shared by everyone. The realm is OpenVPN's: `Auth` for the user
 name and password of `auth-user-pass`, or the name of a private key for its passphrase, exactly the
-`realm` of a `CredentialRequest`. It is part of the path and must be URL encoded.
+`realm` of a `CredentialRequest`. It is part of the path and must be URL encoded, a slash as `%2F`
+(`Uri.EscapeDataString` does both). The server takes it exactly as sent: 1 to 200 characters, no
+control characters, and no space at either end, which is refused rather than trimmed, because a
+trimmed realm would never match the keystore key the client looks up.
 
 - `GET /api/v1/vault` returns every entry of every profile; `GET /api/v1/profiles/{id}/vault` those
   of one profile. Synchronisation delivers them too.
@@ -457,7 +520,8 @@ replaced as a whole.
 
   `slot` is 1 to 10 (`HotkeyActions.MaximumFavouriteSlot`, 10 being the zero key) or `null`, each
   slot at most once, each profile at most once. Only server profiles can be favourites here; local
-  profiles keep their favourite flags locally.
+  profiles keep their favourite flags locally. When a profile is deleted, it disappears from every
+  user's favourites.
 - `GET` / `PUT /api/v1/me/hotkeys`
 
   ```json
@@ -465,7 +529,8 @@ replaced as a whole.
   ```
 
   `actionId` is one of `HotkeyActions.All`, `gesture` is written as the client stores it. The server
-  does not interpret either.
+  does not interpret either. When the profile a shortcut names is deleted, the shortcut stays and its
+  `profileId` becomes `null`.
 - `GET` / `PUT /api/v1/me/settings`
 
   ```json
@@ -473,10 +538,16 @@ replaced as a whole.
   ```
 
   `document` is the portable part of `PilotSettings`, exactly what `PilotSettingsTransfer.Export`
-  produces, at most 64 KiB; apply it with `PilotSettingsTransfer.Import` so machine specific values
-  stay. `schemaVersion` is `PilotSettings.SchemaVersion`. The answer carries an `eTag`; send it as
-  `If-Match` to refuse overwriting a change another machine made (412), or leave it out to overwrite.
-  A `GET` before anything was stored answers `schemaVersion` 0 and an empty document.
+  produces, a JSON object of at most 64 KiB in UTF-8; apply it with `PilotSettingsTransfer.Import` so
+  machine specific values stay. `schemaVersion` is `PilotSettings.SchemaVersion`. The answer carries an
+  `eTag`; send it as `If-Match` to refuse overwriting a change another machine made (412), or leave it
+  out to overwrite. `If-Match` before anything was stored, or a malformed one, is 412 as well.
+  A `GET` before anything was stored answers `schemaVersion` 0, an empty document and `eTag` null.
+
+Usage figures, the last connection and the number of connections (`Profile.LastConnectedAt`,
+`ConnectCount`) are not kept on the server. They describe one machine's use, drive that machine's
+"Recent" list and its "connect last used" shortcut, and recording them centrally would make the
+server keep the connection history it deliberately does not keep.
 
 ## User administration
 
@@ -496,43 +567,191 @@ group, or the list of administrators in mode `none`), not from this API.
 
 ## Endpoint reference
 
-| Method | Path | Who | Success |
-| --- | --- | --- | --- |
-| GET | `/api/v1/server/info` | anyone, no headers | 200 |
-| POST | `/api/v1/auth/login` | anyone | 200 |
-| POST | `/api/v1/auth/entra/exchange` | anyone | 200 |
-| POST | `/api/v1/auth/refresh` | anyone | 200 |
-| POST | `/api/v1/auth/logout` | anyone | 204 |
-| GET | `/api/v1/auth/me` | signed in | 200 |
-| GET | `/api/v1/profiles` | signed in | 200 |
-| GET | `/api/v1/profiles/{id}` | signed in | 200 |
-| GET | `/api/v1/profiles/{id}/configuration` | signed in | 200 |
-| POST | `/api/v1/profiles` | admin | 201 |
-| POST | `/api/v1/profiles/batch` | admin | 200 |
-| PUT | `/api/v1/profiles/{id}` | admin, `If-Match` | 200 |
-| DELETE | `/api/v1/profiles/{id}` | admin | 204 |
-| GET | `/api/v1/tags` | signed in | 200 |
-| POST | `/api/v1/tags` | admin | 201 |
-| PUT | `/api/v1/tags/{id}` | admin | 200 |
-| DELETE | `/api/v1/tags/{id}` | admin | 204 |
-| GET | `/api/v1/vault` | signed in | 200 |
-| GET | `/api/v1/profiles/{id}/vault` | signed in | 200 |
-| POST | `/api/v1/profiles/{id}/vault/{realm}` | signed in | 201 |
-| PUT | `/api/v1/profiles/{id}/vault/{realm}` | admin | 200 |
-| DELETE | `/api/v1/profiles/{id}/vault/{realm}` | admin | 204 |
-| GET | `/api/v1/sync/changes?since={cursor}` | signed in | 200 |
-| GET, PUT | `/api/v1/me/favourites` | signed in | 200 |
-| GET, PUT | `/api/v1/me/hotkeys` | signed in | 200 |
-| GET, PUT | `/api/v1/me/settings` | signed in | 200 |
-| GET | `/api/v1/users` | admin | 200 |
-| GET | `/api/v1/users/{id}` | admin | 200 |
-| POST | `/api/v1/users/{id}/disable` | admin | 200 |
-| POST | `/api/v1/users/{id}/enable` | admin | 200 |
-| POST | `/api/v1/users/{id}/revoke-tokens` | admin | 200 |
-| DELETE | `/api/v1/users/{id}?purge=` | admin | 204 |
-| GET | `/health`, `/health/live`, `/health/ready` | anyone, no headers | 200 |
+Every endpoint with what it takes, what it answers and how it refuses. Field names are camelCase JSON;
+`?` after a type means it may be `null`; times are ISO 8601 with offset; ids are GUIDs.
+
+### Refusals every endpoint can give
+
+Not repeated below. Every call under `/api/v1` except `server/info` can answer:
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `transport.https_required` | Arrived over plain HTTP |
+| 400 | `pilot.header_missing`, `pilot.header_invalid`, `pilot.api_version_unsupported`, `pilot.clock_skew` | A mandatory header is absent or wrong |
+| 426 | `pilot.client_outdated` | Client older than `minimumClientVersion` |
+| 400 | `request.validation_failed` | A field breaks its limit; `errors` names it |
+| 413 | `request.too_large` | Body over the endpoint's limit |
+| 500 | `server.error`, `server.data_key_mismatch` | A fault on the server; show the request id |
+
+and every endpoint that needs a signed in user additionally:
+
+| Status | Code | When |
+| --- | --- | --- |
+| 401 | `auth.token_missing`, `auth.token_invalid`, `auth.token_expired`, `auth.token_revoked`, `auth.client_mismatch` | See [Staying signed in](#staying-signed-in) |
+| 401 + `X-Pilot-Directive: wipe` | `account.revoked` | See [The wipe directive](#the-wipe-directive) |
+| 403 | `auth.forbidden` | An administrator endpoint called by a user |
+
+### Types
+
+**Token** (answer of sign in, Entra exchange and refresh)
+
+```json
+{
+  "accessToken": "string",
+  "accessTokenExpiresAt": "2026-09-18T09:38:09+00:00",
+  "refreshToken": "string",
+  "refreshTokenExpiresAt": "2026-10-18T09:23:09+00:00",
+  "user": { "id": "guid", "username": "string", "displayName": "string?", "role": "admin|user", "provider": "none|file|ldap|entra" }
+}
+```
+
+**Profile**
+
+```json
+{
+  "id": "guid", "name": "string", "remoteHost": "string?", "remotePort": 1194, "protocol": "udp|tcp|null",
+  "requiresCredentials": true, "hasUnsupportedOptions": false, "protectRoutes": null,
+  "notes": "string?", "colour": "#RRGGBB|#RRGGBBAA|null", "tags": ["string"],
+  "contentHash": "64 lower case hex", "changeSeq": 40, "eTag": "\"1234\"",
+  "createdAt": "time", "createdBy": "string", "updatedAt": "time", "updatedBy": "string"
+}
+```
+
+`remotePort` and `protocol` are `null` exactly when `remoteHost` is. `tags` are sorted regardless of case.
+
+**Configuration**: `{ "profileId": "guid", "contentHash": "string", "configuration": "string" }`
+
+**Batch result**
+
+```json
+{ "created": 1, "duplicates": 1, "rejected": 1,
+  "items": [ { "index": 0, "outcome": "created|duplicate|rejected", "profile": "Profile?", "code": "string?", "detail": "string?" } ] }
+```
+
+**Tag**: `{ "id": "guid", "name": "string", "colour": "string?", "changeSeq": 1 }`
+
+**Vault entry**
+
+```json
+{ "profileId": "guid", "realm": "Auth", "username": "string?", "password": "string", "changeSeq": 41,
+  "createdAt": "time", "createdBy": "string", "updatedAt": "time", "updatedBy": "string" }
+```
+
+**Changes**
+
+```json
+{ "cursor": 42, "full": false, "profiles": ["Profile"], "tags": ["Tag"], "vaultEntries": ["Vault entry"],
+  "deletedProfiles": ["guid"], "deletedTags": ["guid"], "deletedVaultEntries": [ { "profileId": "guid", "realm": "string" } ] }
+```
+
+**Favourites**: `{ "items": [ { "profileId": "guid", "slot": 1 } ] }`, slotted ones first in slot order.
+
+**Hotkeys**: `{ "items": [ { "actionId": "string", "gesture": "string", "profileId": "guid?", "isEnabled": true } ] }`, by `actionId`.
+
+**Settings**: `{ "schemaVersion": 2, "document": { }, "eTag": "string?", "updatedAt": "time?" }`
+
+**User** (administration)
+
+```json
+{ "id": "guid", "username": "string", "displayName": "string?", "role": "admin|user", "provider": "none|file|ldap|entra",
+  "state": "active|disabled|deleted", "stateSource": "administrator|provider|null", "stateChangedAt": "time?",
+  "createdAt": "time", "lastLoginAt": "time?", "lastSeenAt": "time?" }
+```
+
+### Server and health
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/server/info` | anyone, no `X-Pilot-*` headers | nothing | 200, see [First contact](#first-contact) | nothing |
+| `GET /health`, `/health/ready` | anyone, no headers | nothing | 200 `Healthy` when the database answers, else 503 | nothing |
+| `GET /health/live` | anyone, no headers | nothing | 200 `Healthy` while the process runs | nothing |
+
+### Signing in
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `POST /api/v1/auth/login` | anyone | `{ "username": "1..256", "password": "string? ..1024" }` | 200 Token | 400 `auth.mode_mismatch` (Entra server); 401 `auth.invalid_credentials`; 403 `auth.forbidden` (outside the allowed group); 401 `account.revoked` + wipe (correct password, account switched off); 429 `request.too_many`; 503 `auth.provider_unavailable` |
+| `POST /api/v1/auth/entra/exchange` | anyone | `{ "accessToken": "Entra token ..16384" }` | 200 Token | 400 `auth.mode_mismatch`; 401 `auth.invalid_credentials` (token not accepted); 403 `auth.forbidden`; 401 `account.revoked` + wipe; 409 `auth.identity_conflict`; 429; 503 |
+| `POST /api/v1/auth/refresh` | anyone | `{ "refreshToken": "..512" }` | 200 Token, a new pair | 401 `auth.refresh_token_invalid`, `auth.refresh_token_reused`, `auth.client_mismatch`, `auth.reauthentication_required`; 401 `account.revoked` + wipe; 429 (30 a minute per installation); 503 |
+| `POST /api/v1/auth/logout` | anyone | `{ "refreshToken": "..512" }` | 204, also for an unknown token | nothing beyond the common ones |
+| `GET /api/v1/auth/me` | signed in | nothing | 200 `user` object of the Token | the common ones |
+
+### Profiles
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/profiles` | signed in | query `tag` (exact name, any case), `search` (name, remote host or tag contains, any case), both optional | 200 `[Profile]` by name | the common ones |
+| `GET /api/v1/profiles/{id}` | signed in | nothing | 200 Profile, header `ETag` | 404 `profile.not_found` |
+| `GET /api/v1/profiles/{id}/configuration` | signed in | nothing | 200 Configuration | 404 `profile.not_found` |
+| `POST /api/v1/profiles` | admin | body below | 201 Profile, `Location` | 400 `profile.invalid_configuration`, `profile.not_self_contained`, `profile.no_server_verification`, `request.validation_failed`; 409 `profile.duplicate` |
+| `POST /api/v1/profiles/batch` | admin | `{ "items": [ body below, 1..500 ] }`, at most 64 MiB | 200 Batch result | 400 when `items` is missing, empty or over 500; 413 `request.too_large`. Every other problem is an item's `rejected` or `duplicate` outcome |
+| `PUT /api/v1/profiles/{id}` | admin | header `If-Match`; body below with `configuration` null to keep the current one | 200 Profile, header `ETag` | 428 `request.precondition_required`; 412 `request.precondition_failed`; 404 `profile.not_found`; 409 `profile.duplicate`; the 400 codes of `POST` |
+| `DELETE /api/v1/profiles/{id}` | admin | nothing | 204; its vault entries go with it | 404 `profile.not_found` |
+
+Profile body:
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `name` | string | required, 1 to 200 characters, no control characters |
+| `configuration` | string | required on create, at most 256 KiB, self contained (see [Profiles and tags](#profiles-and-tags)) |
+| `notes` | string? | at most 4000 characters; `null` clears |
+| `colour` | string? | `#RRGGBB` or `#RRGGBBAA`; `null` clears |
+| `protectRoutes` | bool? | `null` follows the client's setting |
+| `tags` | [string]? | at most 50, each 1 to 100 characters, no control characters, no `null`; created when unknown; on `PUT` the complete list |
+
+### Tags
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/tags` | signed in | nothing | 200 `[Tag]` by name | the common ones |
+| `POST /api/v1/tags` | admin | `{ "name": "1..100", "colour": "string?" }` | 201 Tag, `Location` | 409 `tag.duplicate` (any case) |
+| `PUT /api/v1/tags/{id}` | admin | the same body | 200 Tag; a rename changes every profile carrying it | 404 `tag.not_found`; 409 `tag.duplicate` |
+| `DELETE /api/v1/tags/{id}` | admin | nothing | 204; removed from every profile | 404 `tag.not_found` |
+
+### Vault
+
+`{realm}` is URL encoded, see [The shared vault](#the-shared-vault).
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/vault` | signed in | nothing | 200 `[Vault entry]` | the common ones |
+| `GET /api/v1/profiles/{id}/vault` | signed in | nothing | 200 `[Vault entry]` | 404 `profile.not_found` |
+| `POST /api/v1/profiles/{id}/vault/{realm}` | signed in | `{ "username": "string? ..512", "password": "1..4096" }` | 201 Vault entry, `Location` | 404 `profile.not_found`; 409 `vault.entry_exists`; 400 for the realm |
+| `PUT /api/v1/profiles/{id}/vault/{realm}` | admin | the same body | 200 Vault entry, created or replaced | 404 `profile.not_found`; 400 for the realm |
+| `DELETE /api/v1/profiles/{id}/vault/{realm}` | admin | nothing | 204 | 404 `vault.entry_not_found` |
+
+An empty `username` is stored as `null`.
+
+### Synchronisation
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/sync/changes` | signed in | query `since`: 0 or a cursor this server returned | 200 Changes | 400 for a negative `since`; 410 `sync.cursor_expired` |
+
+### The caller's own data
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/me/favourites` | signed in | nothing | 200 Favourites | the common ones |
+| `PUT /api/v1/me/favourites` | signed in | Favourites, up to 1000 items, `slot` 1 to 10 or `null` | 200 Favourites as stored | 400 for a slot or profile used twice or a `null` item; 404 `profile.not_found`; 409 `request.conflict` |
+| `GET /api/v1/me/hotkeys` | signed in | nothing | 200 Hotkeys | the common ones |
+| `PUT /api/v1/me/hotkeys` | signed in | Hotkeys, up to 200 items, `actionId` and `gesture` 1 to 100 characters | 200 Hotkeys as stored | 400 for an action used twice or a `null` item; 404 `profile.not_found`; 409 `request.conflict` |
+| `GET /api/v1/me/settings` | signed in | nothing | 200 Settings | the common ones |
+| `PUT /api/v1/me/settings` | signed in | `{ "schemaVersion": 0.., "document": { } }`, optional `If-Match` | 200 Settings | 400 when `document` is not an object or over 64 KiB; 412 `request.precondition_failed`; 409 `request.conflict` |
+
+### User administration
+
+| Call | Who | Takes | Answers | Refuses with |
+| --- | --- | --- | --- | --- |
+| `GET /api/v1/users` | admin | nothing | 200 `[User]` by name | the common ones |
+| `GET /api/v1/users/{id}` | admin | nothing | 200 User | 404 `user.not_found` |
+| `POST /api/v1/users/{id}/disable` | admin | nothing | 200 User | 404 `user.not_found`; 409 `user.self_modification` |
+| `POST /api/v1/users/{id}/enable` | admin | nothing | 200 User | 404 `user.not_found` |
+| `POST /api/v1/users/{id}/revoke-tokens` | admin | nothing | 200 User | 404 `user.not_found` |
+| `DELETE /api/v1/users/{id}` | admin | query `purge`, default `false` | 204 | 404 `user.not_found`; 409 `user.self_modification` |
 
 ## Mapping onto the client's model
+
 
 | Client | Server |
 | --- | --- |
@@ -547,6 +766,7 @@ group, or the list of administrators in mode `none`), not from this API.
 | `ISecretStore` entry `profile/{id:N}/{realm}` | vault entry `(profileId, realm)` |
 | `PackagedCredential` (`ProfileId`, `Realm`, `Username`, `Password`) | vault entry, the same four fields |
 | `Session` history | stays local; the server keeps no history |
+| `Profile.LastConnectedAt`, `ConnectCount` | stay local, per machine |
 
 Where the client's code touches this: `IProfileStore`, `IHotkeyStore` and `ISettingsService` are the
 seams a server backed implementation fits behind; `IProfileImportService` already has the prepare and
@@ -554,3 +774,20 @@ commit steps that map onto the batch call; `ISecretStore` stays the local store 
 `ConnectionManager` keeps receiving the configuration text as it does now. `docs/usage.md` in the
 client promises that nothing but the release check touches the network, and needs to say that a
 configured server does too.
+
+Things the client has to get right that are easy to miss:
+
+- **Deleting a server profile deletes its keystore entries.** The client's own delete does not remove
+  `profile/{id:N}/*` today; for a profile from the server, a deletion in the feed and the wipe directive
+  both have to.
+- **The local copy is identified by the server's id**, not by the hash: a server profile can carry the
+  same configuration as a local import, and the two are different profiles.
+- **Upload goes through the import wizard.** It inlines files; the server additionally rewrites
+  `auth-user-pass <file>` and answers with the stored configuration, which the client keeps as the server
+  copy.
+- **One refresh at a time**, behind a lock, and the new refresh token stored before the new access token
+  is used.
+- **One client id per installation**, generated once and kept next to the settings; tokens do not work
+  under another.
+- **The request id** of every failed call goes into the client's log and into what the user sees.
+- **Plain HTTP and certificate errors are never worked around**; the operator fixes the certificate.

@@ -50,12 +50,14 @@ public sealed class UserAccountService(
         user.Provider = provider;
         user.DisplayName = identity.DisplayName ?? user.DisplayName;
         user.ExternalId = identity.ExternalId ?? user.ExternalId;
-        user.LastLoginAt = now;
-        user.LastSeenAt = now;
         SetRole(user, identity.Role);
 
         ProviderAccountStatus status = identity.Disabled ? ProviderAccountStatus.Disabled : ProviderAccountStatus.Active(identity.Role);
         await ApplyAsync(user, status, cancellationToken);
+
+        // Only a sign in that was let in counts as one.
+        user.LastLoginAt = now;
+        user.LastSeenAt = now;
         return user;
     }
 

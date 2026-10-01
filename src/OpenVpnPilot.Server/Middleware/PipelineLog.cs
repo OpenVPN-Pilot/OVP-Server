@@ -5,6 +5,9 @@ internal static partial class PipelineLog
     [LoggerMessage(EventId = 5000, Level = LogLevel.Warning, Message = "Refused {Method} {Path} with {Status} {Code}: {Detail}")]
     public static partial void Refused(ILogger logger, string method, PathString path, int status, string code, string detail);
 
+    [LoggerMessage(EventId = 5005, Level = LogLevel.Warning, Message = "Refused {Method} {Path} with 400 request.validation_failed: {Fields}")]
+    public static partial void InvalidRequest(ILogger logger, string method, PathString path, IEnumerable<string> fields);
+
     [LoggerMessage(EventId = 5001, Level = LogLevel.Information, Message = "The client abandoned {Method} {Path} before it was answered")]
     public static partial void Aborted(ILogger logger, string method, PathString path);
 

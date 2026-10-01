@@ -10,6 +10,7 @@ public static class ErrorCodes
     public const string PreconditionFailed = "request.precondition_failed";
     public const string TooManyRequests = "request.too_many";
     public const string Conflict = "request.conflict";
+    public const string TooLarge = "request.too_large";
 
     public const string HttpsRequired = "transport.https_required";
 

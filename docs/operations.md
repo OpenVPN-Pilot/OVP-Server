@@ -72,11 +72,16 @@ restarting the API would fix. They are logged only at `Verbose`.
 | Sign someone out everywhere, nothing else | `POST /api/v1/users/{id}/revoke-tokens` |
 | Take access away and erase what their clients hold | `POST /api/v1/users/{id}/disable`, or remove them at the identity provider |
 | The same, and record them as removed | `DELETE /api/v1/users/{id}` |
-| Remove every trace of them | `DELETE /api/v1/users/{id}?purge=true` |
+| Remove every trace of them | `DELETE /api/v1/users/{id}`, then later `DELETE /api/v1/users/{id}?purge=true` |
 
 A disabled or deleted user's client is told to erase every profile, vault entry and setting it
 received from this server on its next request, whichever request that is. A client that is offline
 receives the instruction when it comes back. Profiles the user imported locally are not touched.
+
+A purge removes the record of the user together with their sessions, so the server no longer recognises
+their tokens: a client that comes back after a purge is told to sign in, not to erase itself. Delete
+first, and purge once their clients have had time to call in, at the latest after the refresh token
+lifetime (`OVP_REFRESH_TOKEN_DAYS`).
 
 At the identity provider: removing a user from `users.yaml` or setting `disabled: true` acts on their
 next request; removing them from the directory or the user group acts at their next refresh, at most

@@ -48,7 +48,7 @@ least for `OVP_DATA_KEY`, `OVP_JWT_SIGNING_KEY`, `OVP_DB_PASSWORD` and `OVP_LDAP
 | Variable | Default | |
 | --- | --- | --- |
 | `OVP_AUTH_MODE` | required | `none`, `file`, `ldap` or `entra`, see [authentication.md](authentication.md) |
-| `OVP_LOGIN_ATTEMPTS_PER_MINUTE` | `10` | Sign in, refresh and Entra exchange calls per client address and minute |
+| `OVP_LOGIN_ATTEMPTS_PER_MINUTE` | `10` | Sign in and Entra exchange calls per client address and minute. Refreshes are limited separately, to 30 a minute per installation, so a team behind one address is not throttled |
 | `OVP_AUTH_NONE_ADMINS` | | Mode `none`: comma separated user names that are administrators |
 | `OVP_AUTH_FILE` | `/app/config/users.yaml` | Mode `file`: the user list |
 
@@ -59,14 +59,14 @@ least for `OVP_DATA_KEY`, `OVP_JWT_SIGNING_KEY`, `OVP_DB_PASSWORD` and `OVP_LDAP
 | `OVP_LDAP_HOST` | required | Host name as it appears in the directory's certificate |
 | `OVP_LDAP_SECURITY` | `ldaps` | `ldaps`, or `starttls` on the plain port. Unencrypted LDAP is not offered |
 | `OVP_LDAP_PORT` | `636` or `389` | Follows `OVP_LDAP_SECURITY` |
-| `OVP_LDAP_CA_CERT_PATH` | | PEM of the authority that issued the directory's certificate, when the system does not trust it |
+| `OVP_LDAP_CA_CERT_PATH` | | PEM of the authority that issued the directory's certificate, when the system does not trust it. Read at start; a file that is not a certificate stops the server |
 | `OVP_LDAP_BIND_DN` | required | Service account that searches for users |
 | `OVP_LDAP_BIND_PASSWORD` | required | Its password |
 | `OVP_LDAP_BASE_DN` | required | Where users are searched |
 | `OVP_LDAP_ACTIVE_DIRECTORY` | `true` | Active Directory: disabled accounts are recognised and nested groups count |
 | `OVP_LDAP_USER_FILTER` | see below | Must contain `{0}` for the escaped user name |
 | `OVP_LDAP_DISPLAY_NAME_ATTRIBUTE` | `displayName` or `cn` | |
-| `OVP_LDAP_ADMIN_GROUP` | required | DN of the group whose members are administrators |
+| `OVP_LDAP_ADMIN_GROUP` | required | DN of the group whose members are administrators. A DN the directory does not have answers sign in with 503 and an error naming this variable |
 | `OVP_LDAP_USER_GROUP` | | DN of the group whose members may sign in as users. Unset: everyone the filter finds may sign in. Administrators need not be in it |
 
 The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Directory and
@@ -77,7 +77,7 @@ The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Dir
 | Variable | Default | |
 | --- | --- | --- |
 | `OVP_ENTRA_INSTANCE` | `https://login.microsoftonline.com` | The identity platform of the tenant's cloud, for example `https://login.microsoftonline.us` for US Government. Must be https |
-| `OVP_ENTRA_TENANT_ID` | required | Directory (tenant) id |
+| `OVP_ENTRA_TENANT_ID` | required | Directory (tenant) id, a GUID. A domain name is refused at start, because the issuer of every token names the tenant by its id |
 | `OVP_ENTRA_CLIENT_ID` | required | Application id of the registration clients sign in with |
 | `OVP_ENTRA_AUDIENCE` | `api://<client id>` | Audience of the access tokens clients present |
 | `OVP_ENTRA_SCOPE` | `<audience>/access_as_user` | Scope clients request; the token must carry its last segment in `scp` |

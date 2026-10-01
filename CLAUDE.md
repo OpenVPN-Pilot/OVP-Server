@@ -152,8 +152,30 @@ at `Error`, then creates the table and migrates. That line on a first start is e
 
 On Docker Desktop for Windows, changing `config/users.yaml` on the host changes the modification time
 the container sees within a second. The store compares it at most every five seconds rather than
-watching for file events, which do not cross every kind of bind mount. Measured: removing a user from
-the file answered that user's next request with the wipe directive six seconds later.
+watching for file events, which do not cross every kind of bind mount, and reads a changed file once it
+was last written two seconds ago. Measured: removing a user from the file answered that user's next
+request with the wipe directive 2.2 seconds later; an emptied file and one with blank values were
+refused and the previous list kept.
+
+### A repeatable read snapshot is taken by the statement that waits for the lock
+
+PostgreSQL takes a repeatable read transaction's snapshot when its first statement starts, which for
+`pg_advisory_xact_lock_shared` is before it waits. A synchronisation that waited for a writer therefore
+read the cursor after the write and the data before it. Measured with four writers and one reader for
+15 seconds: the reader's copy missed 202 of 1037 tags. With read committed after the lock it matched
+exactly.
+
+### Two refreshes with one token both pass a read-then-write check
+
+Measured: two simultaneous refreshes with the same token both answered 200 in four of five attempts
+when the token was read, checked and then marked as replaced. Claiming it with one conditional
+`UPDATE` makes the second one wait for the first one's row lock and find it replaced.
+
+### A body over the limit closes the connection
+
+Kestrel refuses a body over the endpoint's limit as soon as the declared length exceeds it, answers
+413 and closes the connection. A client still sending, such as Python's urllib, then sees a reset
+instead of the answer; curl with `Expect: 100-continue` shows the problem details.
 
 ### PostgreSQL's xmin is the concurrency token
 

@@ -18,6 +18,15 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
             await ProblemResponses.WriteAsync(
                 context, exception.Status, exception.Code, exception.Message, exception.Wipe, exception.Errors);
         }
+        catch (BadHttpRequestException exception)
+        {
+            // Kestrel refuses a body over the endpoint's limit while it is being read, after routing chose it.
+            (string code, string detail) = exception.StatusCode == StatusCodes.Status413PayloadTooLarge
+                ? (ErrorCodes.TooLarge, "The request body is larger than this endpoint accepts. Send it in smaller parts.")
+                : (ErrorCodes.ValidationFailed, "The request could not be read.");
+            PipelineLog.Refused(logger, context.Request.Method, context.Request.Path, exception.StatusCode, code, exception.Message);
+            await ProblemResponses.WriteAsync(context, exception.StatusCode, code, detail);
+        }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             // The client went away. There is nobody left to answer and nothing went wrong here.

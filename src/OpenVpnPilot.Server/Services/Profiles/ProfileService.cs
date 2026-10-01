@@ -17,7 +17,7 @@ public interface IProfileService
 
     public Task<ProfileConfigurationResponse> GetConfigurationAsync(Guid id, CancellationToken cancellationToken);
 
-    public Task<ProfileResponse> UpdateAsync(Guid id, ProfileUpdateRequest request, uint? expectedVersion, CancellationToken cancellationToken);
+    public Task<ProfileResponse> UpdateAsync(Guid id, ProfileUpdateRequest request, IfMatch? precondition, CancellationToken cancellationToken);
 
     public Task DeleteAsync(Guid id, CancellationToken cancellationToken);
 }
@@ -26,8 +26,8 @@ public sealed class ProfileService(
     IProfileRepository profiles,
     ISyncRepository sync,
     IUnitOfWork unitOfWork,
-    ProfileFactory factory,
-    TagAssigner tagAssigner,
+    IProfileFactory factory,
+    ITagAssigner tagAssigner,
     ICurrentUser currentUser,
     TimeProvider time,
     ILogger<ProfileService> logger) : IProfileService
@@ -51,27 +51,33 @@ public sealed class ProfileService(
     }
 
     public async Task<ProfileResponse> UpdateAsync(
-        Guid id, ProfileUpdateRequest request, uint? expectedVersion, CancellationToken cancellationToken)
+        Guid id, ProfileUpdateRequest request, IfMatch? precondition, CancellationToken cancellationToken)
     {
-        if (expectedVersion is null)
+        if (precondition is null)
         {
             throw new ServiceException(StatusCodes.Status428PreconditionRequired, ErrorCodes.PreconditionRequired,
                 "Send the ETag of the profile you read in If-Match, so a change made meanwhile is not overwritten.");
         }
 
         ProfileFactory.RequireName(request.Name);
-        OvpnFacts? facts = request.Configuration is null ? null : OvpnInspector.Inspect(request.Configuration);
-        string? hash = request.Configuration is null ? null : TokenHashing.ContentHash(request.Configuration);
+        OvpnInspection? inspection = request.Configuration is null ? null : OvpnInspector.Inspect(request.Configuration);
+        string? hash = inspection is null ? null : TokenHashing.ContentHash(inspection.Configuration);
 
         await using ISyncedWrite write = await unitOfWork.BeginSyncedWriteAsync(cancellationToken);
         Profile profile = await FindAsync(id, withContent: request.Configuration is not null, cancellationToken);
-        profiles.ExpectVersion(profile, expectedVersion.Value);
+        if (!precondition.Matches(profile.Version))
+        {
+            throw ServiceException.PreconditionFailed("The profile was changed since it was read. Read it again and retry.");
+        }
+
+        // Also catches a change committed between reading the profile here and saving it.
+        profiles.ExpectVersion(profile, profile.Version);
 
         bool configurationChanged = hash is not null && hash != profile.ContentHash;
         if (configurationChanged)
         {
             await RefuseDuplicateAsync(hash!, profile.Id, cancellationToken);
-            factory.ApplyConfiguration(profile, request.Configuration!, facts!, hash!);
+            factory.ApplyConfiguration(profile, inspection!, hash!);
         }
 
         profile.Name = request.Name.Trim();

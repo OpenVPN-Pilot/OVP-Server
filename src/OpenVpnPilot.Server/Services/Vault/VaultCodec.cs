@@ -5,8 +5,15 @@ using OpenVpnPilot.Server.Security;
 
 namespace OpenVpnPilot.Server.Services.Vault;
 
+public interface IVaultCodec
+{
+    public void Write(VaultEntry entry, string? username, string password);
+
+    public VaultEntryResponse Read(VaultEntry entry);
+}
+
 // User name and password are encrypted together, bound to the profile and realm they belong to.
-public sealed class VaultCodec(ISecretCipher cipher)
+public sealed class VaultCodec(ISecretCipher cipher) : IVaultCodec
 {
     public void Write(VaultEntry entry, string? username, string password) =>
         entry.Cipher = cipher.Encrypt(JsonSerializer.Serialize(new Secret(username, password)), Context(entry));

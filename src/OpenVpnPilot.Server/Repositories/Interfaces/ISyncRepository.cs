@@ -8,6 +8,10 @@ public interface ISyncRepository
 
     public Task<IReadOnlyList<Tombstone>> TombstonesSinceAsync(long changeSeq, CancellationToken cancellationToken);
 
+    // A vault entry added again under a key that was deleted: the old deletion would otherwise reach a
+    // client in the same answer as the new entry and erase it there.
+    public Task<int> RemoveVaultTombstonesAsync(Guid profileId, string realm, CancellationToken cancellationToken);
+
     public Task<long> PrunedThroughAsync(CancellationToken cancellationToken);
 
     // Removes tombstones older than the cut-off and records the newest change number that went with them.

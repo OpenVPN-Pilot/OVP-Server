@@ -33,7 +33,7 @@ internal static partial class AuthLog
     [LoggerMessage(EventId = 2010, Level = LogLevel.Information, Message = "Loaded {Count} user(s) from {Path}")]
     public static partial void UserFileLoaded(ILogger logger, string path, int count);
 
-    [LoggerMessage(EventId = 2011, Level = LogLevel.Error, Message = "Kept the previous user list: {Path} could not be read")]
+    [LoggerMessage(EventId = 2011, Level = LogLevel.Error, Message = "Kept the previous user list: {Path} could not be read or is not valid")]
     public static partial void UserFileRejected(ILogger logger, string path, Exception exception);
 
     [LoggerMessage(EventId = 2012, Level = LogLevel.Warning,
@@ -43,8 +43,23 @@ internal static partial class AuthLog
     [LoggerMessage(EventId = 2020, Level = LogLevel.Error, Message = "The directory at {Host}:{Port} cannot be reached or refused the service account")]
     public static partial void DirectoryUnavailable(ILogger logger, string host, int port, Exception exception);
 
+    [LoggerMessage(EventId = 2021, Level = LogLevel.Error,
+        Message = "{Variable} names the group {GroupDn}, which the directory does not have; sign in is refused until it is fixed")]
+    public static partial void DirectoryGroupMissing(ILogger logger, string variable, string groupDn);
+
+    [LoggerMessage(EventId = 2022, Level = LogLevel.Error,
+        Message = "The user filter matches {Count} entries for {Username}; the account is neither signed in nor changed until the filter is unambiguous")]
+    public static partial void DirectoryAmbiguousUser(ILogger logger, string username, int count);
+
+    [LoggerMessage(EventId = 2023, Level = LogLevel.Debug, Message = "Skipped a search reference below {BaseDn}")]
+    public static partial void ReferralSkipped(ILogger logger, string baseDn);
+
     [LoggerMessage(EventId = 2030, Level = LogLevel.Warning, Message = "Refused an Entra ID token: {Reason}")]
     public static partial void EntraTokenRejected(ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 2032, Level = LogLevel.Warning,
+        Message = "Refused an Entra ID token requested by application {RequestedBy}, not by {ClientId}")]
+    public static partial void EntraWrongApplication(ILogger logger, string requestedBy, string clientId);
 
     [LoggerMessage(EventId = 2031, Level = LogLevel.Error, Message = "Could not fetch the Entra ID signing keys of tenant {TenantId}")]
     public static partial void EntraMetadataUnavailable(ILogger logger, string tenantId, Exception exception);
@@ -54,6 +69,10 @@ internal static partial class AuthLog
 
     [LoggerMessage(EventId = 2101, Level = LogLevel.Information, Message = "Signed out {Username} on client {ClientId}, {Count} token(s) revoked")]
     public static partial void SignedOut(ILogger logger, string username, Guid clientId, int count);
+
+    [LoggerMessage(EventId = 2107, Level = LogLevel.Information,
+        Message = "Ignored a sign out from client {ClientId}: the refresh token is unknown ({Unknown}) or belongs to another client")]
+    public static partial void SignOutIgnored(ILogger logger, Guid clientId, bool unknown);
 
     [LoggerMessage(EventId = 2102, Level = LogLevel.Warning,
         Message = "A refresh token of {Username} was used a second time from client {ClientId}; revoked {Count} token(s) of that session")]

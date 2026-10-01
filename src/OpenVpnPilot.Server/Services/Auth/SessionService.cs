@@ -60,10 +60,7 @@ public sealed class SessionService(
 
         if (current.ReplacedById is not null)
         {
-            // A token that was already exchanged is being used again: one of the two holders stole it.
-            int revoked = await tokens.RevokeFamilyAsync(current.FamilyId, now, cancellationToken);
-            AuthLog.RefreshTokenReused(logger, user.Username, clientId, revoked);
-            throw ServiceException.Unauthorized(ErrorCodes.RefreshTokenReused, "The refresh token was already used. Sign in again.");
+            throw await ReusedAsync(current, user, clientId, now, cancellationToken);
         }
 
         if (current.RevokedAt is not null || current.ExpiresAt <= now)
@@ -74,8 +71,24 @@ public sealed class SessionService(
         await RecheckWithProviderAsync(user, current, now, cancellationToken);
 
         TokenResponse response = Issue(user, clientId, current.FamilyId, current.AuthenticatedAt, out RefreshToken next);
-        current.ReplacedById = next.Id;
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        bool claimed;
+        await using (IWriteTransaction transaction = await unitOfWork.BeginAsync(cancellationToken))
+        {
+            claimed = await tokens.TryClaimAsync(current.Id, next.Id, cancellationToken);
+            if (claimed)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+        }
+
+        if (!claimed)
+        {
+            // Two refreshes with one token at the same moment: the check above passed for both, the claim
+            // only for the other one. That is the same reuse, only closer together.
+            tokens.Discard(next);
+            throw await ReusedAsync(current, user, clientId, now, cancellationToken);
+        }
+
         AuthLog.Refreshed(logger, user.Username, clientId);
         return response;
     }
@@ -85,7 +98,9 @@ public sealed class SessionService(
         RefreshToken? current = await tokens.FindByHashAsync(TokenHashing.Hash(refreshToken), cancellationToken);
         if (current is null || current.ClientId != clientId)
         {
-            // Signing out of a session that does not exist leaves the same state as signing out of one that does.
+            // Signing out of a session that does not exist leaves the same state as signing out of one that
+            // does, so the answer is the same; the log still says it was not this client's session.
+            AuthLog.SignOutIgnored(logger, clientId, current is null);
             return;
         }
 
@@ -109,6 +124,15 @@ public sealed class SessionService(
 
         ProviderAccountStatus status = await provider.RecheckAsync(user, cancellationToken);
         await accounts.ApplyAsync(user, status, cancellationToken);
+    }
+
+    // A token that was already exchanged is being used again: one of the two holders stole it.
+    private async Task<ServiceException> ReusedAsync(
+        RefreshToken current, User user, Guid clientId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        int revoked = await tokens.RevokeFamilyAsync(current.FamilyId, now, cancellationToken);
+        AuthLog.RefreshTokenReused(logger, user.Username, clientId, revoked);
+        return ServiceException.Unauthorized(ErrorCodes.RefreshTokenReused, "The refresh token was already used. Sign in again.");
     }
 
     private TokenResponse Issue(User user, Guid clientId, Guid familyId, DateTimeOffset authenticatedAt, out RefreshToken stored)

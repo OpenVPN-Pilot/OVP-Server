@@ -31,15 +31,26 @@ public sealed class UserStateService(IMemoryCache cache, IUserRepository users, 
             return cached;
         }
 
+        // A change made while this read was under way invalidates before the read finishes; caching what was
+        // read then would bring back the state the change just ended, for the rest of the lifetime.
+        object? generation = cache.Get(GenerationKey(userId));
         User? user = await users.FindAsync(userId, cancellationToken);
         UserSnapshot? snapshot = user is null
             ? null
             : new UserSnapshot(user.Id, user.Username, user.Role, user.State, user.SecurityStamp, user.Provider);
-        cache.Set(SnapshotKey(userId), snapshot, SnapshotLifetime);
+        if (Equals(generation, cache.Get(GenerationKey(userId))))
+        {
+            cache.Set(SnapshotKey(userId), snapshot, SnapshotLifetime);
+        }
+
         return snapshot;
     }
 
-    public void Invalidate(Guid userId) => cache.Remove(SnapshotKey(userId));
+    public void Invalidate(Guid userId)
+    {
+        cache.Set(GenerationKey(userId), new object(), SnapshotLifetime * 2);
+        cache.Remove(SnapshotKey(userId));
+    }
 
     public async Task TouchAsync(Guid userId, CancellationToken cancellationToken)
     {
@@ -54,4 +65,6 @@ public sealed class UserStateService(IMemoryCache cache, IUserRepository users, 
     }
 
     private static string SnapshotKey(Guid userId) => "user:" + userId.ToString("N");
+
+    private static string GenerationKey(Guid userId) => "user-generation:" + userId.ToString("N");
 }

@@ -6,7 +6,7 @@ namespace OpenVpnPilot.Server.Contracts.Requests;
 /// <summary>The complete list of the caller's favourites. Replaces whatever was stored.</summary>
 /// <param name="Items">Favourite profiles, each optionally in a numbered slot.</param>
 public sealed record FavouritesRequest(
-    [Required, MaxLength(1000)] IReadOnlyList<FavouriteItem> Items);
+    [Required, MaxLength(1000), NoNullItems] IReadOnlyList<FavouriteItem> Items);
 
 /// <summary>A favourite profile.</summary>
 /// <param name="ProfileId">The profile.</param>
@@ -18,7 +18,7 @@ public sealed record FavouriteItem(
 /// <summary>The complete list of the caller's shortcuts. Replaces whatever was stored.</summary>
 /// <param name="Items">One entry per action.</param>
 public sealed record HotkeysRequest(
-    [Required, MaxLength(200)] IReadOnlyList<HotkeyItem> Items);
+    [Required, MaxLength(200), NoNullItems] IReadOnlyList<HotkeyItem> Items);
 
 /// <summary>A shortcut, as the client's own shortcut settings hold it.</summary>
 /// <param name="ActionId">The client's action identifier, for example <c>ToggleQuickSwitcher</c> or <c>ConnectFavourite1</c>. Each at most once.</param>

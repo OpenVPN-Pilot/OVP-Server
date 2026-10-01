@@ -10,11 +10,18 @@ public sealed record OvpnFacts(
     bool RequiresCredentials,
     bool HasUnsupportedOptions);
 
+// The configuration as it is stored, which can differ from the one sent in one way only: see Inspect.
+public sealed record OvpnInspection(string Configuration, OvpnFacts Facts);
+
 // A deliberately small reading of an OpenVPN configuration: enough to refuse what no client could use
-// and to fill the fields a list shows. The client's own parser remains the authority on everything else.
+// and to fill the fields a list shows. It reads lines, quotes, blocks and directives exactly as the
+// client's OvpnConfigParser does, so both derive the same facts from the same text.
 public static class OvpnInspector
 {
     public const int MaximumLength = 256 * 1024;
+
+    // The longest host name DNS allows, and the column the remote host is stored in.
+    public const int MaximumHostLength = 255;
 
     // Directives that name a file. On the server there is no file, so they must arrive as inline blocks.
     private static readonly HashSet<string> FileDirectives = new(StringComparer.Ordinal)
@@ -29,20 +36,25 @@ public static class OvpnInspector
         "client-connect", "client-disconnect", "learn-address", "auth-user-pass-optional",
     };
 
-    public static OvpnFacts Inspect(string configuration)
+    // Checks a configuration and returns it as it is to be stored. The one change made: "auth-user-pass
+    // <file>" becomes a bare "auth-user-pass". The file holds a user name and password, belongs in the
+    // vault rather than here, and exists on no other machine; the bare directive makes OpenVPN ask, and
+    // the client answers from the vault. Everything else is kept byte for byte.
+    public static OvpnInspection Inspect(string configuration)
     {
         if (string.IsNullOrWhiteSpace(configuration) || configuration.Length > MaximumLength)
         {
             throw Refuse(ErrorCodes.ProfileInvalidConfiguration, $"A configuration must be between 1 and {MaximumLength} characters.");
         }
 
-        List<string[]> directives = [];
+        List<List<string>> directives = [];
         HashSet<string> blocks = new(StringComparer.Ordinal);
+        List<OvpnLine> credentialFiles = [];
         string? openBlock = null;
 
-        foreach (string raw in configuration.Split('\n'))
+        foreach (OvpnLine raw in OvpnLine.Split(configuration))
         {
-            string line = raw.Trim();
+            string line = raw.Text.Trim();
             if (openBlock is not null)
             {
                 if (line == $"</{openBlock}>")
@@ -59,15 +71,20 @@ public static class OvpnInspector
                 continue;
             }
 
-            if (line.StartsWith('<') && line.EndsWith('>') && !line.StartsWith("</", StringComparison.Ordinal))
+            if (IsOpeningTag(line))
             {
                 openBlock = line[1..^1];
                 continue;
             }
 
-            string[] parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            parts[0] = parts[0].TrimStart('-').ToLowerInvariant();
-            directives.Add(parts);
+            List<string> tokens = OvpnLine.Tokenize(line);
+            if (tokens is ["auth-user-pass", _, ..])
+            {
+                credentialFiles.Add(raw);
+                tokens = ["auth-user-pass"];
+            }
+
+            directives.Add(tokens);
         }
 
         if (openBlock is not null)
@@ -75,38 +92,48 @@ public static class OvpnInspector
             throw Refuse(ErrorCodes.ProfileInvalidConfiguration, $"The block <{openBlock}> is never closed.");
         }
 
-        return Evaluate(directives, blocks);
+        OvpnFacts facts = Evaluate(directives, blocks);
+        return new OvpnInspection(OvpnLine.Replace(configuration, credentialFiles, "auth-user-pass"), facts);
     }
 
-    private static OvpnFacts Evaluate(List<string[]> directives, HashSet<string> blocks)
+    private static OvpnFacts Evaluate(List<List<string>> directives, HashSet<string> blocks)
     {
-        foreach (string[] directive in directives)
+        foreach (List<string> directive in directives)
         {
-            if (FileDirectives.Contains(directive[0]) && directive.Length > 1 && !IsInlineMarker(directive[1]))
+            bool namesFile = FileDirectives.Contains(directive[0]) && directive.Count > 1 && !blocks.Contains(directive[0])
+                && !(directive is ["dh", "none"]);
+            if (namesFile)
             {
                 throw Refuse(ErrorCodes.ProfileNotSelfContained,
                     $"'{directive[0]}' refers to the file '{directive[1]}'. Import the profile in the client first, which puts files inline.");
             }
+        }
 
-            if (directive[0] == "auth-user-pass" && directive.Length > 1)
-            {
-                throw Refuse(ErrorCodes.ProfileNotSelfContained,
-                    "'auth-user-pass' names a credentials file. Credentials belong in the vault, not in the configuration.");
-            }
+        if (blocks.Contains("auth-user-pass"))
+        {
+            throw Refuse(ErrorCodes.ProfileInvalidConfiguration,
+                "The configuration carries a user name and password in an <auth-user-pass> block. Credentials belong in the vault.");
         }
 
         bool verifiesServer = blocks.Contains("ca") || blocks.Contains("pkcs12")
-            || directives.Any(d => d[0] is "capath" or "peer-fingerprint") || blocks.Contains("peer-fingerprint");
+            || directives.Any(d => d[0] is "ca" or "capath" or "peer-fingerprint" or "pkcs12");
         if (!verifiesServer)
         {
             throw Refuse(ErrorCodes.ProfileNoServerVerification,
                 "The configuration has no ca, capath, pkcs12 or peer-fingerprint, so OpenVPN would refuse it before connecting.");
         }
 
-        string[]? remote = directives.FirstOrDefault(d => d[0] == "remote" && d.Length > 1);
-        string? protocol = Normalise(remote?.Length > 3 ? remote[3] : Value(directives, "proto")) ?? "udp";
-        int port = ParsePort(remote?.Length > 2 ? remote[2] : null)
-            ?? ParsePort(Value(directives, "rport")) ?? ParsePort(Value(directives, "port")) ?? 1194;
+        // The first remote is the one a list shows; bare proto, rport and port count from their first line.
+        List<string>? remote = directives.FirstOrDefault(d => d[0] == "remote" && d.Count > 1);
+        if (remote is not null && remote[1].Length > MaximumHostLength)
+        {
+            throw Refuse(ErrorCodes.ProfileInvalidConfiguration, $"The remote host is longer than {MaximumHostLength} characters.");
+        }
+
+        int port = ParsePort(remote?.Count > 2 ? remote[2] : null)
+            ?? ParsePort(First(directives, "rport")) ?? ParsePort(First(directives, "port")) ?? 1194;
+        string protocol = (remote?.Count > 3 ? remote[3] : First(directives, "proto")) is { } p
+            && p.StartsWith("tcp", StringComparison.OrdinalIgnoreCase) ? "tcp" : "udp";
 
         return new OvpnFacts(
             remote?[1],
@@ -116,21 +143,14 @@ public static class OvpnInspector
             directives.Any(d => ScriptDirectives.Contains(d[0])));
     }
 
-    private static bool IsInlineMarker(string argument) => argument == "[inline]";
+    private static bool IsOpeningTag(string line) =>
+        line.Length >= 3 && line[0] == '<' && line[1] != '/' && line[^1] == '>' && !line[1..^1].Any(char.IsWhiteSpace);
 
-    private static string? Value(List<string[]> directives, string name) =>
-        directives.LastOrDefault(d => d[0] == name && d.Length > 1)?[1];
-
-    private static string? Normalise(string? protocol) => protocol?.ToLowerInvariant() switch
-    {
-        null => null,
-        var p when p.StartsWith("tcp", StringComparison.Ordinal) => "tcp",
-        var p when p.StartsWith("udp", StringComparison.Ordinal) => "udp",
-        _ => null,
-    };
+    private static string? First(List<List<string>> directives, string name) =>
+        directives.FirstOrDefault(d => d[0] == name && d.Count > 1)?[1];
 
     private static int? ParsePort(string? text) =>
-        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int port) && port is > 0 and <= 65535 ? port : null;
+        int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int port) && port is > 0 and <= 65535 ? port : null;
 
     private static ServiceException Refuse(string code, string detail) =>
         ServiceException.BadRequest(code, detail);

@@ -49,7 +49,7 @@ public sealed class PilotHeadersMiddleware(RequestDelegate next, ApiOptions opti
 
         string versionText = Required(headers, PilotHeaders.ClientVersion);
         Version version = ParseVersion(versionText) ?? throw Invalid(PilotHeaders.ClientVersion, "a version such as 1.9.0");
-        if (version < options.MinimumClientVersion)
+        if (Complete(version) < Complete(options.MinimumClientVersion))
         {
             throw new ServiceException(
                 StatusCodes.Status426UpgradeRequired,
@@ -94,6 +94,10 @@ public sealed class PilotHeadersMiddleware(RequestDelegate next, ApiOptions opti
         string core = text.Split('-', '+')[0];
         return Version.TryParse(core, out Version? parsed) ? parsed : null;
     }
+
+    // System.Version ranks a missing part below zero, which would make 1.9 older than 1.9.0.
+    private static Version Complete(Version version) =>
+        new(version.Major, version.Minor, Math.Max(version.Build, 0), Math.Max(version.Revision, 0));
 
     private static string Required(IHeaderDictionary headers, string name)
     {

@@ -9,6 +9,10 @@ public interface IUnitOfWork
     // Reads that produce a cursor wait for any synchronised write in progress and see none half done.
     public Task<ISyncedRead> BeginSyncedReadAsync(CancellationToken cancellationToken);
 
+    // Holds off synchronised reads and writes without taking a change number, for removing what a
+    // reader in progress might otherwise find half gone.
+    public Task<IWriteTransaction> BeginExclusiveAsync(CancellationToken cancellationToken);
+
     // A plain transaction for writes that are not synchronised but must happen together.
     public Task<IWriteTransaction> BeginAsync(CancellationToken cancellationToken);
 

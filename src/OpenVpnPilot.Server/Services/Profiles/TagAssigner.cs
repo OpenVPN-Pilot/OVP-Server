@@ -3,15 +3,20 @@ using OpenVpnPilot.Server.Repositories.Interfaces;
 
 namespace OpenVpnPilot.Server.Services.Profiles;
 
+public interface ITagAssigner
+{
+    public Task<List<Tag>> ResolveAsync(IReadOnlyList<string?>? names, long changeSeq, CancellationToken cancellationToken);
+}
+
 // Turns tag names into tags, creating the ones that do not exist. Scoped to one request, so a batch
 // that names the same new tag twenty times creates it once.
-public sealed class TagAssigner(ITagRepository tags, TimeProvider time)
+public sealed class TagAssigner(ITagRepository tags, TimeProvider time) : ITagAssigner
 {
-    public const int MaximumNameLength = 100;
+    public const int MaximumNameLength = Contracts.Requests.ProfileLimits.TagName;
 
     private readonly Dictionary<string, Tag> known = new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task<List<Tag>> ResolveAsync(IReadOnlyList<string>? names, long changeSeq, CancellationToken cancellationToken)
+    public async Task<List<Tag>> ResolveAsync(IReadOnlyList<string?>? names, long changeSeq, CancellationToken cancellationToken)
     {
         List<string> wanted = Normalise(names);
         List<string> unknown = [.. wanted.Where(n => !known.ContainsKey(n))];
@@ -40,12 +45,17 @@ public sealed class TagAssigner(ITagRepository tags, TimeProvider time)
         return result;
     }
 
-    public static List<string> Normalise(IReadOnlyList<string>? names)
+    public static List<string> Normalise(IReadOnlyList<string?>? names)
     {
-        List<string> result = [];
-        foreach (string raw in names ?? [])
+        if (names?.Count > Contracts.Requests.ProfileLimits.Tags)
         {
-            string name = raw.Trim();
+            throw ServiceException.Invalid("tags", $"A profile carries at most {Contracts.Requests.ProfileLimits.Tags} tags.");
+        }
+
+        List<string> result = [];
+        foreach (string? raw in names ?? [])
+        {
+            string name = raw?.Trim() ?? throw ServiceException.Invalid("tags", "A tag name cannot be null.");
             if (name.Length == 0)
             {
                 continue;

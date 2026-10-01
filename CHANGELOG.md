@@ -58,6 +58,13 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
   secrets.
 - `/health`, the same check as `/health/ready`, and the container health check spelled out in the
   Compose file.
+- A profile uploaded with `auth-user-pass <file>`, as the client's importer leaves it, is accepted and
+  stored with a bare `auth-user-pass`; the file's user name and password belong in the vault. Before,
+  such profiles were refused as not self contained.
+- `request.too_large` (413): a batch import may be up to 64 MiB, and a larger body is refused in the
+  same problem shape as every other refusal.
+- Refreshes have their own limit, 30 a minute per installation, instead of sharing the sign in limit
+  per address, so a team behind one address is not throttled.
 
 ### Security
 
@@ -74,8 +81,50 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
 - Profile and tag names may no longer contain control characters, which could forge lines in the log
   and entries in a client's list.
 - Mode `none` warns at every start that anyone can sign in under any name.
+- Two refreshes with the same token at the same moment both succeeded and left two valid sessions. The
+  token is now claimed in one statement; the second is reuse, and the session ends.
+- A user file that is empty, lists no users, or has a user without a name or password is refused and
+  the previous list kept. Before, an emptied file removed everyone and told every client to wipe
+  itself. A changed file is read once it was last written two seconds ago, so a file caught halfway
+  through being saved is not taken for the new list.
+- An LDAP group named in `OVP_LDAP_ADMIN_GROUP` or `OVP_LDAP_USER_GROUP` that the directory does not have
+  answers 503 with an error naming the variable. Before, a typing error there disabled every user and
+  wiped their clients. A user filter matching several entries no longer counts as a removed account.
 
 ### Fixed
+
+- A synchronisation running while a change was being saved could answer with a cursor past that change
+  without containing it, so the client never received it: measured, 202 of 1037 changes made during
+  15 seconds were missing. The read now sees the state after the lock it waits for.
+- A vault entry deleted and added again between two synchronisations was reported as both changed and
+  deleted, and a client applying the answer in the documented order erased it.
+- Sending an access token along with `server/info` answered 500, and sending a revoked one along with a
+  refresh answered `auth.token_revoked`, so a client could never refresh. Anonymous endpoints no longer
+  look at the account behind an access token.
+- One bad item of a batch import, such as a name that is too long, refused the whole batch; every item
+  is now judged on its own, including `null`. An item that was rejected no longer makes a later
+  identical item a duplicate.
+- A malformed `If-Match` was taken as absent: profile updates answered 428 and settings were silently
+  overwritten. It now matches nothing and answers 412; `*` and lists of tags work as RFC 9110 says.
+- The server read configurations differently from the client: the last `proto` and `port` instead of
+  the first, quotes kept in the host, only `
+` as line end, case folded names. It now reads them as the
+  client's parser does. `dh none` is accepted, credentials in an `<auth-user-pass>` block are refused,
+  and a remote host over 255 characters is refused instead of failing with 500.
+- A directory failing after the first connection, during a search or the user's bind, answered 500
+  instead of 503 `auth.provider_unavailable`.
+- `null` in a list of tags, favourites or shortcuts answered 500 instead of 400. A favourite naming a
+  profile deleted at the same moment answers 409 `request.conflict` instead of 500.
+- A realm with a slash was stored with `%2F` in it, and a realm with a space at either end was quietly
+  trimmed and so never matched the client's keystore key; the first is decoded, the second refused.
+- A client version such as `1.9` was taken as older than a minimum of `1.9.0`.
+- A disable or token revocation could be undone for half a minute by a request that read the account
+  just before it.
+- An Entra ID token signed with a key published after the cached key list was refused until the list
+  expired; the list is fetched again once.
+- `OVP_ENTRA_TENANT_ID` given as a domain name, and `OVP_LDAP_CA_CERT_PATH` pointing at a file that is not a
+  certificate, now stop the start with a message naming the variable.
+- An unreadable log folder could stop the server.
 
 - Signing in against Active Directory failed with a server error. A search from the domain root is
   answered with references to the directory's other partitions besides the user, and those references

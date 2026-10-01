@@ -42,10 +42,16 @@ docker compose run --rm api hash-password
 
 A plain password in the file works too, and the server warns about each one at every start.
 
-The server reads the file again within a few seconds of a change, without a restart. Removing a user
-or setting `disabled: true` takes effect on that user's next request: their clients are told to erase
-everything they received from this server. A file that no longer parses is ignored with an error in
-the log and the previous list stays in force; at start it stops the server instead.
+The server reads the file again within a few seconds of a change, without a restart: it looks at the
+modification time at most every five seconds and reads a changed file once it was last written two
+seconds ago, so a file caught halfway through being saved is not taken for the new list. Removing a
+user or setting `disabled: true` takes effect on that user's next request: their clients are told to
+erase everything they received from this server.
+
+A file that no longer parses, lists no users at all, or has a user without a name or password is
+ignored with an error in the log, and the previous list stays in force; at start it stops the server
+instead. An emptied file is far more often an accident than a decision, and taking it at its word would
+tell every client to erase itself.
 
 ## `ldap`: LDAP or Active Directory
 
@@ -71,6 +77,12 @@ OVP_LDAP_ADMIN_GROUP=CN=OVP Admins,OU=Groups,DC=corp,DC=example,DC=com
 OVP_LDAP_USER_GROUP=CN=OVP Users,OU=Groups,DC=corp,DC=example,DC=com
 ```
 
+Both group DNs are looked up in the directory before membership is decided. A group that does not exist,
+usually a typing error in the variable, answers every sign in and refresh of a user who is not an
+administrator with 503 `auth.provider_unavailable` and an error in the log that names the variable; nobody
+is locked out or wiped over it. A user filter that matches more than one entry for a name signs nobody in
+under that name and, on a refresh, likewise answers 503 instead of treating the account as removed.
+
 The directory is asked again on every refresh, so a user who is deleted, disabled or removed from the
 user group loses access within one access token lifetime and their clients are told to erase what
 they hold. When the directory cannot be reached, sign in and refresh answer
@@ -85,6 +97,8 @@ What Active Directory needs from its side:
 - **A service account** that may read users and groups. An ordinary domain user can.
 - A disabled account cannot sign in and is answered like a wrong password, since a disabled account's
   password cannot be checked. Sessions it already has end with the wipe directive at their next refresh.
+  A client whose refresh token has already expired therefore never receives the wipe directive for an
+  account disabled in Active Directory; disable the user on the server as well when that matters.
 
 Searching from the domain root, Active Directory also answers with references to its other partitions;
 they are skipped, as they hold no users of the domain. This mode has been measured against a Samba 4
@@ -96,24 +110,47 @@ in `lab/` and described in [development.md](development.md#testing).
 Clients sign in with Microsoft themselves and hand the server the resulting access token, which the
 server checks against Entra's published keys. The server needs no secret of its own.
 
-One app registration is enough:
+One app registration is enough. It is both the API clients sign in to and the public client they sign
+in as, so there is no client secret anywhere. In the Microsoft Entra admin center
+(`entra.microsoft.com`), as someone who may register applications:
 
-1. **App registrations, New registration.** Any name. Supported accounts: this directory only.
-2. **Authentication, Add a platform, Mobile and desktop applications**, redirect URI
-   `http://localhost`. Enable **Allow public client flows**.
-3. **Expose an API.** Set the application id URI (the default `api://<application id>` is fine) and
-   add a scope named `access_as_user`, consent by admins and users.
-4. **App roles.** Add `Admin` and `User`, allowed member type users/groups.
-5. **Enterprise applications**, the same app, **Users and groups:** assign people or groups to the
-   roles. With `OVP_ENTRA_REQUIRE_ROLE=true`, only assigned people may sign in.
+1. **Register the application.** *Identity, Applications, App registrations, New registration.* Any name,
+   for example `OpenVPN Pilot`. *Supported account types:* accounts in this organisational directory
+   only. Leave the redirect URI empty and register. On the **Overview** page note the
+   *Application (client) id* and the *Directory (tenant) id*: they become `OVP_ENTRA_CLIENT_ID` and
+   `OVP_ENTRA_TENANT_ID`.
+2. **Let the desktop client sign in.** *Authentication, Add a platform, Mobile and desktop
+   applications*, custom redirect URI `http://localhost`, which is what the client's system browser
+   sign in returns to. Under *Advanced settings* set **Allow public client flows** to *Yes* and save.
+3. **Expose the API.** *Expose an API, Application ID URI, Add*, and keep the proposed
+   `api://<application id>`. Then *Add a scope*: name `access_as_user`, *Who can consent:* admins and
+   users, any display names and descriptions, state enabled. A different URI or scope name works too,
+   but then set `OVP_ENTRA_AUDIENCE` and `OVP_ENTRA_SCOPE` to match.
+4. **Allow the client to request that scope.** *API permissions, Add a permission, APIs my
+   organization uses* (or *My APIs*), pick this application, delegated permission `access_as_user`,
+   add, then **Grant admin consent**. Without the consent every user is asked to consent at their first
+   sign in, or refused when users may not consent to applications in the tenant.
+5. **Create the roles.** *App roles, Create app role*, twice: display name and **value** `Admin`, then
+   `User`, *Allowed member types:* users/groups, enabled. The value is what the server compares,
+   case sensitive (`OVP_ENTRA_ADMIN_ROLE`, `OVP_ENTRA_USER_ROLE`).
+6. **Assign people.** *Identity, Applications, Enterprise applications*, the same application, *Users
+   and groups, Add user/group*: pick people or groups and a role. Assigning a group needs Entra ID P1 or
+   higher; without it assign people one by one, or use groups by object id as below.
+7. **Optionally keep everyone else out at Entra already.** In the same enterprise application,
+   *Properties*, **Assignment required** *Yes*: then only assigned people can obtain a token at all.
+   `OVP_ENTRA_REQUIRE_ROLE=true` enforces the same on the server's side.
 
 Then:
 
 ```
 OVP_AUTH_MODE=entra
-OVP_ENTRA_TENANT_ID=<directory id>
-OVP_ENTRA_CLIENT_ID=<application id>
+OVP_ENTRA_TENANT_ID=<directory (tenant) id>
+OVP_ENTRA_CLIENT_ID=<application (client) id>
+OVP_ENTRA_REQUIRE_ROLE=true
 ```
+
+and restart. `GET /api/v1/server/info` now answers `authMode: entra` with the tenant, client id, scope and
+authority, which is everything a client needs; nobody types them into the client.
 
 Who is what, in order:
 
@@ -123,8 +160,9 @@ Who is what, in order:
 | User | `OVP_ENTRA_USER_ROLE`, default `User` | `OVP_ENTRA_USER_GROUP` |
 
 Anyone else is refused when `OVP_ENTRA_USER_GROUP` is set or `OVP_ENTRA_REQUIRE_ROLE=true`, and is a
-user otherwise. Groups need the group claim, configured under **Token configuration** as security
-groups by object id. A person in more than 200 groups receives no group claim at all (Entra's overage
+user otherwise. Groups need the group claim: *App registrations*, the application, *Token
+configuration, Add groups claim*, **Security groups**, and for the access token the *Group ID*
+format; the variables take the group's *Object id* from its overview page. A person in more than 200 groups receives no group claim at all (Entra's overage
 rule), so for large directories assign the app roles to the groups instead; roles are always in the token.
 
 Someone who has signed in before and later loses the role or group is treated like a disabled account:

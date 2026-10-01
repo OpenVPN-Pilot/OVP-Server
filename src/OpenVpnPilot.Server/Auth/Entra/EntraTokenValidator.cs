@@ -30,10 +30,30 @@ public sealed class EntraTokenValidator
 
     public async Task<ExternalIdentity> ValidateAsync(string accessToken, CancellationToken cancellationToken)
     {
-        OpenIdConnectConfiguration configuration;
+        TokenValidationResult result = await ValidateAgainstAsync(accessToken, await MetadataAsync(cancellationToken));
+        if (result.Exception is SecurityTokenSignatureKeyNotFoundException)
+        {
+            // Entra rotates its signing keys. A token signed with a key published after the cached list was
+            // fetched is checked once more against a fresh list instead of being refused for hours.
+            metadata.RequestRefresh();
+            result = await ValidateAgainstAsync(accessToken, await MetadataAsync(cancellationToken));
+        }
+
+        if (!result.IsValid)
+        {
+            string reason = result.Exception?.Message ?? "unknown reason";
+            AuthLog.EntraTokenRejected(logger, reason);
+            throw ServiceException.Unauthorized(ErrorCodes.InvalidCredentials, "The Entra ID token was not accepted.");
+        }
+
+        return ReadIdentity(result.ClaimsIdentity);
+    }
+
+    private async Task<OpenIdConnectConfiguration> MetadataAsync(CancellationToken cancellationToken)
+    {
         try
         {
-            configuration = await metadata.GetConfigurationAsync(cancellationToken);
+            return await metadata.GetConfigurationAsync(cancellationToken);
         }
         catch (InvalidOperationException exception)
         {
@@ -41,7 +61,10 @@ public sealed class EntraTokenValidator
             AuthLog.EntraMetadataUnavailable(logger, options.TenantId, exception);
             throw ServiceException.Unavailable(ErrorCodes.ProviderUnavailable, "Entra ID cannot be reached. Try again shortly.");
         }
+    }
 
+    private Task<TokenValidationResult> ValidateAgainstAsync(string accessToken, OpenIdConnectConfiguration configuration)
+    {
         TokenValidationParameters parameters = new()
         {
             // Entra issues version 1 tokens unless the registration asks for version 2; both are accepted. A
@@ -57,15 +80,7 @@ public sealed class EntraTokenValidator
             ClockSkew = TimeSpan.FromMinutes(2),
         };
 
-        TokenValidationResult result = await new JsonWebTokenHandler().ValidateTokenAsync(accessToken, parameters);
-        if (!result.IsValid)
-        {
-            string reason = result.Exception?.Message ?? "unknown reason";
-            AuthLog.EntraTokenRejected(logger, reason);
-            throw ServiceException.Unauthorized(ErrorCodes.InvalidCredentials, "The Entra ID token was not accepted.");
-        }
-
-        return ReadIdentity(result.ClaimsIdentity);
+        return new JsonWebTokenHandler().ValidateTokenAsync(accessToken, parameters);
     }
 
     private ExternalIdentity ReadIdentity(ClaimsIdentity identity)
@@ -82,7 +97,7 @@ public sealed class EntraTokenValidator
         string? requestedBy = identity.FindFirst("azp")?.Value ?? identity.FindFirst("appid")?.Value;
         if (requestedBy is not null && !string.Equals(requestedBy, options.ClientId, StringComparison.OrdinalIgnoreCase))
         {
-            AuthLog.EntraTokenRejected(logger, $"requested by application {requestedBy}, not by {options.ClientId}");
+            AuthLog.EntraWrongApplication(logger, requestedBy, options.ClientId);
             throw ServiceException.Unauthorized(ErrorCodes.InvalidCredentials, "The Entra ID token was issued to another application.");
         }
 

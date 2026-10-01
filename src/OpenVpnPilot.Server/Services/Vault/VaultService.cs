@@ -25,7 +25,7 @@ public sealed class VaultService(
     IProfileRepository profiles,
     ISyncRepository sync,
     IUnitOfWork unitOfWork,
-    VaultCodec codec,
+    IVaultCodec codec,
     ICurrentUser currentUser,
     TimeProvider time,
     ILogger<VaultService> logger) : IVaultService
@@ -69,6 +69,7 @@ public sealed class VaultService(
         };
         codec.Write(entry, Blank(request.Username), request.Password);
         vault.Add(entry);
+        await sync.RemoveVaultTombstonesAsync(profileId, realm, cancellationToken);
         await write.CommitAsync(cancellationToken);
         VaultLog.Added(logger, currentUser.Username, profileId, realm, write.ChangeSeq);
         return codec.Read(entry);
@@ -86,6 +87,7 @@ public sealed class VaultService(
         {
             entry = new VaultEntry { ProfileId = profileId, Realm = realm, CreatedAt = now, CreatedBy = currentUser.Username };
             vault.Add(entry);
+            await sync.RemoveVaultTombstonesAsync(profileId, realm, cancellationToken);
         }
 
         entry.ChangeSeq = write.ChangeSeq;
@@ -124,12 +126,19 @@ public sealed class VaultService(
         }
     }
 
+    // The realm is the client's keystore key as OpenVPN named it, so it is taken exactly as sent and
+    // refused rather than tidied: a trimmed realm would never match the one the client looks up.
     private static string Realm(string realm)
     {
-        string trimmed = realm.Trim();
-        return trimmed.Length is 0 or > MaximumRealmLength || trimmed.Any(char.IsControl)
-            ? throw ServiceException.Invalid("realm", $"A realm is 1 to {MaximumRealmLength} printable characters.")
-            : trimmed;
+        // Routing decodes every escape in a path segment except a slash, which it leaves as %2F.
+        string decoded = realm.Replace("%2F", "/", StringComparison.OrdinalIgnoreCase);
+        bool valid = decoded.Length is > 0 and <= MaximumRealmLength
+            && !decoded.Any(char.IsControl)
+            && decoded.Trim().Length == decoded.Length;
+        return valid
+            ? decoded
+            : throw ServiceException.Invalid(
+                "realm", $"A realm is 1 to {MaximumRealmLength} printable characters, without spaces at either end.");
     }
 
     private static string? Blank(string? value) => string.IsNullOrEmpty(value) ? null : value;

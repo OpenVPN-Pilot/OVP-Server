@@ -42,8 +42,10 @@ public sealed class UsersController(IUserAdminService users) : ControllerBase
     /// <summary>Deletes a user. Their clients are told to erase everything from this server.</summary>
     /// <param name="id">The user.</param>
     /// <param name="purge">
-    /// Also removes the record that the user existed, with their favourites, shortcuts and settings. A client that
-    /// still holds a token is told to wipe itself either way; after a purge the same name may sign in again as new.
+    /// Also removes the record that the user existed, with their favourites, shortcuts and settings, and after it the
+    /// same name may sign in again as new. Without the record the server no longer knows the account's tokens, so
+    /// only a client that comes back within one access token lifetime is told to wipe itself. Delete without purge
+    /// first, and purge once the clients have been told.
     /// </param>
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
     [HttpDelete("{id:guid}")]

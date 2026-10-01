@@ -11,7 +11,7 @@ public sealed class FileAuthProvider(UserFileStore store, IPasswordHasher hasher
 
     public Task<ExternalIdentity> SignInAsync(string username, string? password, CancellationToken cancellationToken)
     {
-        UserFileEntry? entry = store.Find(username);
+        UserFileUser? entry = store.Find(username);
 
         // An unknown name costs as much as a wrong password, so timing does not tell them apart.
         string stored = entry?.Password ?? DummyHash;
@@ -22,7 +22,7 @@ public sealed class FileAuthProvider(UserFileStore store, IPasswordHasher hasher
         }
 
         return Task.FromResult(new ExternalIdentity(
-            entry!.Username, entry.DisplayName, null, RoleOf(entry), entry.Disabled));
+            entry!.Username, entry.DisplayName, null, entry.Role, entry.Disabled));
     }
 
     public Task<ProviderAccountStatus> RecheckAsync(User user, CancellationToken cancellationToken) =>
@@ -30,17 +30,14 @@ public sealed class FileAuthProvider(UserFileStore store, IPasswordHasher hasher
 
     public ProviderAccountStatus? QuickCheck(string username)
     {
-        UserFileEntry? entry = store.Find(username);
+        UserFileUser? entry = store.Find(username);
         return entry switch
         {
             null => ProviderAccountStatus.Missing,
             { Disabled: true } => ProviderAccountStatus.Disabled,
-            _ => ProviderAccountStatus.Active(RoleOf(entry)),
+            _ => ProviderAccountStatus.Active(entry.Role),
         };
     }
-
-    private static UserRole RoleOf(UserFileEntry entry) =>
-        string.Equals(entry.Role, "admin", StringComparison.OrdinalIgnoreCase) ? UserRole.Admin : UserRole.User;
 
     // A valid hash of a random value nobody knows, verified when the name does not exist.
     private const string DummyHash =

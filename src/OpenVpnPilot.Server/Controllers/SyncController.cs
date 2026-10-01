@@ -19,6 +19,7 @@ public sealed class SyncController(ISyncService sync) : ControllerBase
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
     [HttpGet("changes")]
     [ProducesResponseType<SyncChangesResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone, "application/problem+json")]
     public Task<SyncChangesResponse> Changes([FromQuery] long since, CancellationToken cancellationToken) =>
         sync.ChangesAsync(since, cancellationToken);

@@ -21,6 +21,8 @@ public sealed class MeController(IPreferenceService preferences, ISettingsServic
     /// <summary>Replaces the caller's favourites with this list.</summary>
     [HttpPut("favourites")]
     [ProducesResponseType<FavouritesResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public Task<FavouritesResponse> ReplaceFavourites(FavouritesRequest request, CancellationToken cancellationToken) =>
         preferences.ReplaceFavouritesAsync(request, cancellationToken);
 
@@ -33,6 +35,8 @@ public sealed class MeController(IPreferenceService preferences, ISettingsServic
     /// <summary>Replaces the caller's shortcuts with this list.</summary>
     [HttpPut("hotkeys")]
     [ProducesResponseType<HotkeysResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public Task<HotkeysResponse> ReplaceHotkeys(HotkeysRequest request, CancellationToken cancellationToken) =>
         preferences.ReplaceHotkeysAsync(request, cancellationToken);
 
@@ -45,6 +49,7 @@ public sealed class MeController(IPreferenceService preferences, ISettingsServic
     /// <summary>Stores the caller's settings document. <c>If-Match</c> is optional and, when sent, must match.</summary>
     [HttpPut("settings")]
     [ProducesResponseType<SettingsResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
     public Task<SettingsResponse> ReplaceSettings(
         SettingsRequest request, [FromHeader(Name = "If-Match")] string? ifMatch, CancellationToken cancellationToken) =>

@@ -36,6 +36,8 @@ public sealed class VaultController(IVaultService vault) : ControllerBase
     /// <param name="cancellationToken">Cancelled when the client disconnects.</param>
     [HttpPost("api/v1/profiles/{profileId:guid}/vault/{realm}")]
     [ProducesResponseType<VaultEntryResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<CreatedResult> Add(Guid profileId, string realm, VaultEntryRequest request, CancellationToken cancellationToken)
     {
@@ -47,6 +49,8 @@ public sealed class VaultController(IVaultService vault) : ControllerBase
     [HttpPut("api/v1/profiles/{profileId:guid}/vault/{realm}")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     [ProducesResponseType<VaultEntryResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public Task<VaultEntryResponse> Replace(Guid profileId, string realm, VaultEntryRequest request, CancellationToken cancellationToken) =>
         vault.ReplaceAsync(profileId, realm, request, cancellationToken);
 

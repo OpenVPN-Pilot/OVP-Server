@@ -9,6 +9,11 @@ public sealed class SyncRepository(PilotServerDbContext db) : ISyncRepository
 {
     public void AddTombstone(Tombstone tombstone) => db.Tombstones.Add(tombstone);
 
+    public Task<int> RemoveVaultTombstonesAsync(Guid profileId, string realm, CancellationToken cancellationToken) =>
+        db.Tombstones
+            .Where(t => t.Kind == TombstoneKind.VaultEntry && t.EntityId == profileId && t.Realm == realm)
+            .ExecuteDeleteAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Tombstone>> TombstonesSinceAsync(long changeSeq, CancellationToken cancellationToken) =>
         await db.Tombstones.AsNoTracking().Where(t => t.ChangeSeq > changeSeq).OrderBy(t => t.ChangeSeq).ToListAsync(cancellationToken);
 

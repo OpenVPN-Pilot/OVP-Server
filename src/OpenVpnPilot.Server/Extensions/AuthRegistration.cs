@@ -55,6 +55,14 @@ public static class AuthRegistration
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0,
                 }));
+            limiter.AddPolicy(AuthorizationPolicies.RefreshRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
+                context.GetClientContext().ClientId,
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = AuthorizationPolicies.RefreshesPerMinute,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                }));
             limiter.OnRejected = RejectedAsync;
         });
 

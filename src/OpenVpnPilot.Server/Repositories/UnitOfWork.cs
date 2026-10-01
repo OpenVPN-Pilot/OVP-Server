@@ -25,14 +25,24 @@ public sealed class UnitOfWork(PilotServerDbContext db) : IUnitOfWork
 
     public async Task<ISyncedRead> BeginSyncedReadAsync(CancellationToken cancellationToken)
     {
-        IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(
-            System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        // Read committed on purpose. A repeatable read snapshot would be taken by the statement that waits
+        // for the lock, before a writer holding it has committed, and the cursor would then name a change
+        // the answer does not contain. Once the shared lock is held no synchronised write can run, so every
+        // statement after it sees the same committed state.
+        IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await ExecuteAsync(transaction, $"SELECT pg_advisory_xact_lock_shared({SyncLockKey})", cancellationToken);
         object? cursor = await ExecuteAsync(
             transaction,
             $"SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM {PilotServerDbContext.ChangeSequence}",
             cancellationToken);
         return new SyncedRead(transaction, Convert.ToInt64(cursor, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    public async Task<IWriteTransaction> BeginExclusiveAsync(CancellationToken cancellationToken)
+    {
+        IDbContextTransaction transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await ExecuteAsync(transaction, $"SELECT pg_advisory_xact_lock({SyncLockKey})", cancellationToken);
+        return new SyncedWrite(this, transaction, 0);
     }
 
     public async Task<IWriteTransaction> BeginAsync(CancellationToken cancellationToken) =>
@@ -52,6 +62,11 @@ public sealed class UnitOfWork(PilotServerDbContext db) : IUnitOfWork
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
             throw ServiceException.Conflict(ErrorCodes.Conflict, "The change collides with one made at the same moment. Retry it.");
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            // A favourite or shortcut naming a profile that was deleted between the check and the save.
+            throw ServiceException.Conflict(ErrorCodes.Conflict, "The change refers to something removed at the same moment. Retry it.");
         }
     }
 

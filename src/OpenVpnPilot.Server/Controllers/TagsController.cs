@@ -22,6 +22,7 @@ public sealed class TagsController(ITagService tags) : ControllerBase
     [HttpPost]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     [ProducesResponseType<TagResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<CreatedResult> Create(TagRequest request, CancellationToken cancellationToken)
     {
@@ -33,6 +34,9 @@ public sealed class TagsController(ITagService tags) : ControllerBase
     [HttpPut("{id:guid}")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     [ProducesResponseType<TagResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public Task<TagResponse> Update(Guid id, TagRequest request, CancellationToken cancellationToken) =>
         tags.UpdateAsync(id, request, cancellationToken);
 
@@ -40,6 +44,7 @@ public sealed class TagsController(ITagService tags) : ControllerBase
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<NoContentResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await tags.DeleteAsync(id, cancellationToken);

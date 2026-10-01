@@ -53,8 +53,7 @@ public static class ApiRegistration
 
         HttpContext http = context.HttpContext;
         ILogger logger = http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(ApiRegistration));
-        string fields = string.Join("; ", errors.Keys);
-        PipelineLog.Refused(logger, http.Request.Method, http.Request.Path, StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, fields);
+        PipelineLog.InvalidRequest(logger, http.Request.Method, http.Request.Path, errors.Keys);
 
         return new ObjectResult(ProblemResponses.Create(
             http, StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "The request is not valid.", errors))

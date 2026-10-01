@@ -52,7 +52,10 @@ public sealed class ProfilesController(IProfileService profiles, IProfileImportS
     /// <summary>Creates up to 500 profiles at once. Each item is accepted or refused on its own. Administrators only.</summary>
     [HttpPost("batch")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
+    [RequestSizeLimit(ProfileLimits.BatchBodyBytes)]
     [ProducesResponseType<ProfileBatchResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status413PayloadTooLarge, "application/problem+json")]
     public Task<ProfileBatchResponse> CreateBatch(ProfileBatchRequest request, CancellationToken cancellationToken) =>
         imports.CreateBatchAsync(request, cancellationToken);
 
@@ -60,6 +63,9 @@ public sealed class ProfilesController(IProfileService profiles, IProfileImportS
     [HttpPut("{id:guid}")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     [ProducesResponseType<ProfileResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status428PreconditionRequired, "application/problem+json")]
     public async Task<ProfileResponse> Update(
@@ -70,6 +76,7 @@ public sealed class ProfilesController(IProfileService profiles, IProfileImportS
     [HttpDelete("{id:guid}")]
     [Authorize(Policy = AuthorizationPolicies.Admin)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<NoContentResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         await profiles.DeleteAsync(id, cancellationToken);

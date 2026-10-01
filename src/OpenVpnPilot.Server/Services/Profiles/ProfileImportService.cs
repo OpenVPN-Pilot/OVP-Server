@@ -18,23 +18,23 @@ public interface IProfileImportService
 public sealed class ProfileImportService(
     IProfileRepository profiles,
     IUnitOfWork unitOfWork,
-    ProfileFactory factory,
-    TagAssigner tagAssigner,
+    IProfileFactory factory,
+    ITagAssigner tagAssigner,
     ICurrentUser currentUser,
     ILogger<ProfileImportService> logger) : IProfileImportService
 {
     public async Task<ProfileResponse> CreateAsync(ProfileCreateRequest request, CancellationToken cancellationToken)
     {
-        (OvpnFacts facts, string hash) = ProfileFactory.Examine(request);
+        ProfileDraft draft = ProfileFactory.Examine(request);
 
         await using ISyncedWrite write = await unitOfWork.BeginSyncedWriteAsync(cancellationToken);
-        string? existing = await profiles.FindNameByHashAsync(hash, null, cancellationToken);
+        string? existing = await profiles.FindNameByHashAsync(draft.Hash, null, cancellationToken);
         if (existing is not null)
         {
             throw ServiceException.Conflict(ErrorCodes.ProfileDuplicate, $"The profile '{existing}' has exactly this configuration.");
         }
 
-        Profile profile = await BuildAsync(request, facts, hash, write.ChangeSeq, cancellationToken);
+        Profile profile = await BuildAsync(draft, write.ChangeSeq, cancellationToken);
         await write.CommitAsync(cancellationToken);
         ProfileLog.Created(logger, currentUser.Username, profile.Name, profile.Id, write.ChangeSeq);
         return profile.ToResponse();
@@ -43,20 +43,23 @@ public sealed class ProfileImportService(
     // Every item is judged on its own, and all accepted ones are stored together in one transaction.
     public async Task<ProfileBatchResponse> CreateBatchAsync(ProfileBatchRequest request, CancellationToken cancellationToken)
     {
+        if (request.Items is not { Count: > 0 and <= ProfileLimits.BatchItems })
+        {
+            throw ServiceException.Invalid("items", $"A batch holds 1 to {ProfileLimits.BatchItems} profiles.");
+        }
+
         await using ISyncedWrite write = await unitOfWork.BeginSyncedWriteAsync(cancellationToken);
         HashSet<string> seen = new(StringComparer.Ordinal);
         List<(int Index, Profile? Profile, string? Code, string? Detail)> outcomes = [];
 
         for (int index = 0; index < request.Items.Count; index++)
         {
-            ProfileCreateRequest item = request.Items[index];
             try
             {
-                (OvpnFacts facts, string hash) = ProfileFactory.Examine(item);
-                string? existing = seen.Contains(hash)
+                ProfileDraft draft = ProfileFactory.Examine(request.Items[index]);
+                string? existing = seen.Contains(draft.Hash)
                     ? "an earlier item of this batch"
-                    : await profiles.FindNameByHashAsync(hash, null, cancellationToken);
-                seen.Add(hash);
+                    : await profiles.FindNameByHashAsync(draft.Hash, null, cancellationToken);
 
                 if (existing is not null)
                 {
@@ -64,7 +67,9 @@ public sealed class ProfileImportService(
                     continue;
                 }
 
-                outcomes.Add((index, await BuildAsync(item, facts, hash, write.ChangeSeq, cancellationToken), null, null));
+                // Only an item that is actually created makes a later identical one a duplicate.
+                outcomes.Add((index, await BuildAsync(draft, write.ChangeSeq, cancellationToken), null, null));
+                seen.Add(draft.Hash);
             }
             catch (ServiceException refusal) when (refusal.Status == StatusCodes.Status400BadRequest)
             {
@@ -73,14 +78,21 @@ public sealed class ProfileImportService(
         }
 
         await write.CommitAsync(cancellationToken);
+        foreach ((int _, Profile? profile, string? _, string? _) in outcomes)
+        {
+            if (profile is not null)
+            {
+                ProfileLog.Created(logger, currentUser.Username, profile.Name, profile.Id, write.ChangeSeq);
+            }
+        }
+
         return Summarise(outcomes, request.Items.Count);
     }
 
-    private async Task<Profile> BuildAsync(
-        ProfileCreateRequest request, OvpnFacts facts, string hash, long changeSeq, CancellationToken cancellationToken)
+    private async Task<Profile> BuildAsync(ProfileDraft draft, long changeSeq, CancellationToken cancellationToken)
     {
-        Profile profile = factory.Create(request, facts, hash, changeSeq);
-        profile.Tags = await tagAssigner.ResolveAsync(request.Tags, changeSeq, cancellationToken);
+        Profile profile = factory.Create(draft, changeSeq);
+        profile.Tags = await tagAssigner.ResolveAsync(draft.Request.Tags, changeSeq, cancellationToken);
         profiles.Add(profile);
         return profile;
     }
