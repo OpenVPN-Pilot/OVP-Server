@@ -8,8 +8,9 @@ from the outside is a `.env` file, a TLS certificate, and in mode `file` a user 
 - Docker Engine 24 or newer with the Compose plugin, on Linux, or Docker Desktop.
 - A host name clients reach the server by, and a certificate for it. HTTPS is mandatory: the API
   carries passwords and private keys inside TLS and refuses anything that arrives without it.
-- Outbound HTTPS to `login.microsoftonline.com` in mode `entra`, and a route to the directory in mode
-  `ldap`. Nothing else leaves the server.
+- Outbound HTTPS to the Entra ID identity platform in mode `entra`, `login.microsoftonline.com` unless
+  `OVP_ENTRA_INSTANCE` names another, and a route to the directory in mode `ldap`. Nothing else leaves
+  the server.
 
 ## First start
 
@@ -65,7 +66,8 @@ from anywhere else, is refused with `transport.https_required`. Set `OVP_CONTAIN
 better, remove the `ports` section and put the proxy on the Compose network.
 
 The proxy must pass `X-Forwarded-For` and `X-Forwarded-Proto` and must not buffer or rewrite the
-`X-Pilot-*` headers. With Caddy on the same network:
+`X-Pilot-*` headers. The sign in limit counts attempts per client address, which behind a proxy is the one
+it reports in `X-Forwarded-For`, so a proxy that does not pass it puts everyone into one count. With Caddy on the same network:
 
 ```
 vpn-api.example.com {
@@ -96,11 +98,15 @@ The database holds everything; the containers hold nothing worth keeping.
 docker compose exec -T postgres pg_dump -U ovp -Fc ovp > ovp-$(date +%F).dump
 ```
 
+The user and database names are `OVP_DB_USER` and `OVP_DB_NAME`, `ovp` unless changed.
+
 Restore into a fresh stack with `pg_restore --clean`. A backup is only useful together with the
 `OVP_DATA_KEY` it was written under. Clients that synchronised after the backup was taken start over
 with a full synchronisation on their own.
 
 ## Updating
+
+Take a [backup](#backups) first, then:
 
 ```bash
 git pull
@@ -108,4 +114,5 @@ docker compose up -d --build
 ```
 
 Schema migrations run at start unless `OVP_DB_MIGRATE_ON_START=false`. Read [CHANGELOG.md](../CHANGELOG.md)
-before a new major version.
+before a new major version. `GET /api/v1/server/info` and the `X-Pilot-Server-Version` response header
+say which version is running.

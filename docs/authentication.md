@@ -34,6 +34,9 @@ users:
     disabled: false
 ```
 
+User names are compared regardless of case. `role` is `admin` or `user` and defaults to `user`; a user
+listed twice, or with any other role, is refused like any other broken file, see below.
+
 Create a hash without the password ending up in the shell history:
 
 ```bash
@@ -56,7 +59,8 @@ tell every client to erase itself.
 ## `ldap`: LDAP or Active Directory
 
 The server binds with a service account, finds the user with `OVP_LDAP_USER_FILTER`, and proves the
-password by binding as that user. Only LDAPS or StartTLS is used; a directory with a private
+password by binding as that user. An empty password is refused before anything is sent, because most
+directories accept it as an anonymous bind. Only LDAPS or StartTLS is used; a directory with a private
 certificate authority is trusted by naming that authority in `OVP_LDAP_CA_CERT_PATH`.
 
 - Members of `OVP_LDAP_ADMIN_GROUP` are administrators.
@@ -78,9 +82,10 @@ OVP_LDAP_USER_GROUP=CN=OVP Users,OU=Groups,DC=corp,DC=example,DC=com
 ```
 
 Both group DNs are looked up in the directory before membership is decided. A group that does not exist,
-usually a typing error in the variable, answers every sign in and refresh of a user who is not an
-administrator with 503 `auth.provider_unavailable` and an error in the log that names the variable; nobody
-is locked out or wiped over it. A user filter that matches more than one entry for a name signs nobody in
+usually a typing error in the variable, answers sign in and refresh with 503 `auth.provider_unavailable`
+and an error in the log that names the variable: every one when it is `OVP_LDAP_ADMIN_GROUP`, which is
+asked first, and those of users who are not administrators when it is `OVP_LDAP_USER_GROUP`. Nobody is
+locked out or wiped over it. A user filter that matches more than one entry for a name signs nobody in
 under that name and, on a refresh, likewise answers 503 instead of treating the account as removed.
 
 The directory is asked again on every refresh, so a user who is deleted, disabled or removed from the
@@ -103,7 +108,7 @@ What Active Directory needs from its side:
 Searching from the domain root, Active Directory also answers with references to its other partitions;
 they are skipped, as they hold no users of the domain. This mode has been measured against a Samba 4
 domain controller, which answers LDAP the way Windows Server does, including nested groups; the setup is
-in `lab/` and described in [development.md](development.md#testing).
+in `lab/` and described in [testing](development/testing.md#active-directory).
 
 ## `entra`: Entra ID
 

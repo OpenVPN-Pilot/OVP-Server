@@ -16,7 +16,8 @@ people in with a name only, a YAML user list, LDAP or Active Directory, or Entra
 > synchronisation and refresh under concurrent requests. Sign in is proven against OpenLDAP, against a
 > Samba 4 Active Directory domain controller, and against a stand-in for Entra ID in
 > [`lab/`](lab/docker-compose.yaml); a real Entra ID tenant has not been tried yet. The desktop client
-> does not speak to it yet; its remote mode is next. See [Roadmap](#roadmap).
+> works with it in its server mode from OpenVPN Pilot 2.0.0, and its own tests run its synchronisation
+> against this stack. See [Roadmap](#roadmap).
 
 ## Documentation
 
@@ -26,8 +27,8 @@ people in with a name only, a YAML user list, LDAP or Active Directory, or Entra
 | [Configuration](docs/configuration.md) | Every environment variable |
 | [Signing in](docs/authentication.md) | The four modes, the user file, LDAP and AD, the Entra app registration |
 | [Running it](docs/operations.md) | Logs and their retention, health, taking access away, keys |
-| [Integrating the client](docs/client-integration.md) | The contract: endpoints, headers, errors, synchronisation, the wipe directive |
-| [Working on it](docs/development.md) | Architecture, building, schema changes, testing, contributing |
+| [Integrating a client](docs/client-integration/README.md) | The contract, one page each: headers, sessions, profiles, vault, synchronisation, errors, the wipe directive, every endpoint |
+| [Working on it](docs/development/README.md) | [Architecture](docs/development/architecture.md), [building](docs/development/building.md), [testing](docs/development/testing.md), contributing |
 | [Changelog](CHANGELOG.md) | What changed in each version |
 
 ## Features
@@ -41,10 +42,10 @@ people in with a name only, a YAML user list, LDAP or Active Directory, or Entra
 - Four ways of signing in: a name only, a YAML user list, LDAP or Active Directory, Entra ID
 - Two roles, taken from the identity provider
 - A wipe directive: a client whose account was disabled or removed erases everything it received
-- Mandatory client headers: version, installation, platform and timestamp, checked on every call
+- Mandatory client headers: version, API version, installation, platform and timestamp, checked on every call
 - HTTPS only, in the server or behind a reverse proxy
 - Configurations and vault entries encrypted at rest with AES-GCM in PostgreSQL
-- Detailed logs on the console and in hourly files, kept for seven days
+- Detailed logs on the console and in hourly files, kept for seven days by default
 - Swagger, switched on and off with one variable
 
 ## Quick start
@@ -69,7 +70,7 @@ The details, including running behind a reverse proxy, are in [docs/deployment.m
 - [x] Sign in with a name, a user file, LDAP or Active Directory, Entra ID
 - [x] Roles, account revocation and the wipe directive
 - [x] Docker Compose, logging, Swagger
-- [ ] Remote mode in the client
+- [x] Remote mode in the client
 - [ ] Rotating the data key in place
 - [ ] Signing in with Entra ID measured against a real tenant
 
