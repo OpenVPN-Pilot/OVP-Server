@@ -67,6 +67,12 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
   same problem shape as every other refusal.
 - Refreshes have their own limit, 30 a minute per installation, instead of sharing the sign in limit
   per address, so a team behind one address is not throttled.
+- Everything the stack keeps is under `./data`: the database in `./data/db` and the API's logs in
+  `./data/api/logs`, instead of a Docker volume and `./logs`.
+- The Entra ID guide in `docs/authentication.md` spells out the redirect URI dialog, the Application ID
+  URI, the full form of `OVP_ENTRA_SCOPE`, the groups claim's *Group ID* format for access tokens and
+  the need to pick a role when assigning people, and lists the sign in errors that follow from getting
+  one of them wrong.
 
 ### Security
 

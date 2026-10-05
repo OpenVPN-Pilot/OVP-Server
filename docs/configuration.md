@@ -80,7 +80,7 @@ The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Dir
 | `OVP_ENTRA_TENANT_ID` | required | Directory (tenant) id, a GUID. A domain name is refused at start, because the issuer of every token names the tenant by its id |
 | `OVP_ENTRA_CLIENT_ID` | required | Application id of the registration clients sign in with |
 | `OVP_ENTRA_AUDIENCE` | `api://<client id>` | Audience of the access tokens clients present |
-| `OVP_ENTRA_SCOPE` | `<audience>/access_as_user` | Scope clients request; the token must carry its last segment in `scp` |
+| `OVP_ENTRA_SCOPE` | `<audience>/access_as_user` | The full scope clients request, for example `api://<client id>/user_impersonation`; never the bare name, which Entra reads as a Microsoft Graph scope. The token must carry its last segment in `scp` |
 | `OVP_ENTRA_ADMIN_ROLE` | `Admin` | App role value that makes an administrator |
 | `OVP_ENTRA_USER_ROLE` | `User` | App role value that makes a user |
 | `OVP_ENTRA_ADMIN_GROUP` | | Object id of a group whose members are administrators, as an alternative to the role |
@@ -106,6 +106,6 @@ The default filter is `(&(objectClass=user)(sAMAccountName={0}))` for Active Dir
 | Variable | Default | |
 | --- | --- | --- |
 | `OVP_LOG_LEVEL` | `Information` | `Verbose`, `Debug`, `Information`, `Warning`, `Error` or `Fatal`. `Debug` and below include the framework's own detail and every SQL statement |
-| `OVP_LOG_DIRECTORY` | `/app/logs` | Mounted from `./logs` |
+| `OVP_LOG_DIRECTORY` | `/app/logs` | Mounted from `./data/api/logs` |
 | `OVP_LOG_RETENTION_DAYS` | `7` | Day folders older than this are deleted |
 | `TZ` | `UTC` | Time zone of log timestamps and of the day and hour a line is filed under |

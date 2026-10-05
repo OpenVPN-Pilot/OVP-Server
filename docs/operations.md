@@ -22,7 +22,7 @@ docker compose logs -f api
 **Files**, one folder per day and one file per hour:
 
 ```
-logs/
+data/api/logs/
   2026-09-18/
     08.log
     09.log
@@ -50,7 +50,7 @@ lot; use it to chase a problem, not as a setting.
 Docker stores everything a container prints, independently of the files above, and without a limit
 that store grows until the disk is full. Docker can only limit it by size, not by age, so the Compose
 file keeps at most five files of 50 MB per container using the `local` driver. That is what
-`docker compose logs` reads. The dated history with the seven day retention is the `logs` folder.
+`docker compose logs` reads. The dated history with the seven day retention is the `data/api/logs` folder.
 
 ## Health
 

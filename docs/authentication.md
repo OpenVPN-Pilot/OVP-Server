@@ -120,22 +120,37 @@ in as, so there is no client secret anywhere. In the Microsoft Entra admin cente
    *Application (client) id* and the *Directory (tenant) id*: they become `OVP_ENTRA_CLIENT_ID` and
    `OVP_ENTRA_TENANT_ID`.
 2. **Let the desktop client sign in.** *Authentication, Add a platform, Mobile and desktop
-   applications*, custom redirect URI `http://localhost`, which is what the client's system browser
-   sign in returns to. Under *Advanced settings* set **Allow public client flows** to *Yes* and save.
+   applications* (not Web, not Single-page application). The dialog offers three suggested redirect
+   URIs with check boxes; leave them unchecked and type `http://localhost` into the *Custom redirect
+   URIs* field instead, without a port, without a trailing slash and with `http`, not `https`. That
+   is what the client's system browser sign in returns to, and Entra accepts any port for it. Then
+   set **Allow public client flows** to *Yes* (in the newer *Authentication (Preview)* blade it is
+   on the *Settings* tab) and save. Without a redirect URI Entra answers `AADSTS500113`; without
+   public client flows it answers `AADSTS7000218`.
 3. **Expose the API.** *Expose an API, Application ID URI, Add*, and keep the proposed
-   `api://<application id>`. Then *Add a scope*: name `access_as_user`, *Who can consent:* admins and
-   users, any display names and descriptions, state enabled. A different URI or scope name works too,
-   but then set `OVP_ENTRA_AUDIENCE` and `OVP_ENTRA_SCOPE` to match.
-4. **Allow the client to request that scope.** *API permissions, Add a permission, APIs my
-   organization uses* (or *My APIs*), pick this application, delegated permission `access_as_user`,
+   `api://<application id>`. The field must not stay empty: with no Application ID URI Entra cannot
+   find the API and answers `AADSTS500011`. Then *Add a scope*: name `access_as_user`, *Who can
+   consent:* admins and users, any display names and descriptions, state enabled. A different URI or
+   scope name works too, for example `user_impersonation`, but then set `OVP_ENTRA_AUDIENCE` and
+   `OVP_ENTRA_SCOPE` to match. `OVP_ENTRA_SCOPE` is the **full** scope,
+   `api://<application id>/user_impersonation`, never the bare name: a bare name is read by Entra as a
+   scope of Microsoft Graph and refused with `AADSTS650053`.
+4. **Allow the client to request that scope.** *API permissions, Add a permission, My APIs* (or
+   *APIs my organization uses*), pick this application, delegated permission `access_as_user`,
    add, then **Grant admin consent**. Without the consent every user is asked to consent at their first
-   sign in, or refused when users may not consent to applications in the tenant.
+   sign in, or refused when users may not consent to applications in the tenant. The default
+   *Microsoft Graph, User.Read* entry may stay.
 5. **Create the roles.** *App roles, Create app role*, twice: display name and **value** `Admin`, then
    `User`, *Allowed member types:* users/groups, enabled. The value is what the server compares,
    case sensitive (`OVP_ENTRA_ADMIN_ROLE`, `OVP_ENTRA_USER_ROLE`).
 6. **Assign people.** *Identity, Applications, Enterprise applications*, the same application, *Users
    and groups, Add user/group*: pick people or groups and a role. Assigning a group needs Entra ID P1 or
-   higher; without it assign people one by one, or use groups by object id as below.
+   higher; without it assign people one by one, or use groups by object id as below. Pick a role: an
+   assignment with the role *Default Access* puts no `roles` claim in the token. The enterprise
+   application exists when the registration was made in the portal; one made by other means may lack it
+   (the application is then not found in *Enterprise applications*, and sign in fails with
+   `AADSTS500011`) and needs a service principal, for example with
+   `az ad sp create --id <application id>`.
 7. **Optionally keep everyone else out at Entra already.** In the same enterprise application,
    *Properties*, **Assignment required** *Yes*: then only assigned people can obtain a token at all.
    `OVP_ENTRA_REQUIRE_ROLE=true` enforces the same on the server's side.
@@ -160,10 +175,30 @@ Who is what, in order:
 | User | `OVP_ENTRA_USER_ROLE`, default `User` | `OVP_ENTRA_USER_GROUP` |
 
 Anyone else is refused when `OVP_ENTRA_USER_GROUP` is set or `OVP_ENTRA_REQUIRE_ROLE=true`, and is a
-user otherwise. Groups need the group claim: *App registrations*, the application, *Token
-configuration, Add groups claim*, **Security groups**, and for the access token the *Group ID*
-format; the variables take the group's *Object id* from its overview page. A person in more than 200 groups receives no group claim at all (Entra's overage
+user otherwise. Being a member of a group is not enough: the server only reads the token, so the group
+has to be in it. Groups need the group claim: *App registrations*, the application, *Token
+configuration, Add groups claim*, **Security groups**, and under *Access* choose the *Group ID*
+format. The access token is the one the server reads, so leaving out that setting leaves the token
+without groups. The variables take the group's *Object id* from its overview page, not its name. A
+person in more than 200 groups receives no group claim at all (Entra's overage
 rule), so for large directories assign the app roles to the groups instead; roles are always in the token.
+Use one of the two ways, roles or groups; both work side by side.
+
+A token is issued when someone signs in, so after changing the token configuration or an assignment the
+person has to sign in again before it takes effect. The server needs no restart for that.
+
+### When sign in fails
+
+| Message | Meaning and fix |
+| --- | --- |
+| `AADSTS650053`, scope `user_impersonation` (or any bare name) does not exist on resource `00000003-0000-0000-c000-000000000000` | `OVP_ENTRA_SCOPE` holds only the scope name, and Entra took it for a Microsoft Graph scope. Set the full scope, `api://<application id>/<name>` |
+| `AADSTS500011`, resource principal `api://...` not found in the tenant | The Application ID URI is empty or differs from `OVP_ENTRA_AUDIENCE`, or the application has no enterprise application. See steps 3 and 6 |
+| `AADSTS500113`, no reply address registered | The `http://localhost` redirect URI is missing, or was added under another platform. See step 2 |
+| `AADSTS7000218`, client assertion or secret required | *Allow public client flows* is not *Yes*. See step 2 |
+| The client reports that the account may not use this server | Sign in worked, but the token carries neither a matching role nor a matching group. Check the groups claim and its *Group ID* format, the object ids in the variables, that the role was chosen in the assignment, and that the person signed in again afterwards. Pasting the access token into a token viewer shows its `roles` and `groups` claims |
+
+After editing `.env`, recreate the container with `docker compose up -d --force-recreate api`; a plain
+restart does not read the file again. `GET /api/v1/server/info` shows the scope clients will request.
 
 Someone who has signed in before and later loses the role or group is treated like a disabled account:
 their clients are told to erase what they hold at the next sign in with Entra.

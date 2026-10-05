@@ -79,14 +79,18 @@ and `OVP_TRUSTED_PROXIES` set to the Compose network, for example `172.16.0.0/12
 
 | What | Where |
 | --- | --- |
-| Database | The `pgdata` Docker volume |
-| Logs | `./logs/yyyy-MM-dd/HH.log`, see [operations.md](operations.md) |
+| Database | `./data/db` |
+| Logs | `./data/api/logs/yyyy-MM-dd/HH.log`, see [operations.md](operations.md) |
 | Certificates | `./certs`, read only |
 | User list for mode `file` | `./config/users.yaml`, read only |
 | Configuration | `.env` |
 
-The API container runs as the unprivileged user `app` (uid 1654) and must be able to write `./logs`.
-On Linux, `sudo chown 1654:1654 logs` once after creating the folder.
+The API container runs as the unprivileged user `app` (uid 1654) and must be able to write `./data/api/logs`.
+On Linux, `sudo mkdir -p data/api/logs data/db && sudo chown 1654:1654 data/api/logs` once. PostgreSQL
+sets up `./data/db` itself.
+
+Everything the server keeps lives under `./data`, the database apart from the API. The folder is ignored
+by git and by the image build. Copy it only with the stack stopped, or use the backup below.
 
 ## Backups
 
