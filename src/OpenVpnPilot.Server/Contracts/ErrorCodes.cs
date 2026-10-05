@@ -1,7 +1,7 @@
 namespace OpenVpnPilot.Server.Contracts;
 
 // The stable half of every error response. Clients branch on these, so a code is never renamed or
-// reused; a new situation gets a new code. Each one is described in docs/client-integration.md.
+// reused; a new situation gets a new code. Each one is described in docs/client-integration/errors.md.
 public static class ErrorCodes
 {
     public const string ValidationFailed = "request.validation_failed";

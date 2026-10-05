@@ -75,13 +75,15 @@ restarting the API would fix. They are logged only at `Verbose`.
 | Remove every trace of them | `DELETE /api/v1/users/{id}`, then later `DELETE /api/v1/users/{id}?purge=true` |
 
 A disabled or deleted user's client is told to erase every profile, vault entry and setting it
-received from this server on its next request, whichever request that is. A client that is offline
+received from this server on its next request, whichever request that is, see
+[the wipe directive](client-integration/wipe-directive.md). A client that is offline
 receives the instruction when it comes back. Profiles the user imported locally are not touched.
 
-A purge removes the record of the user together with their sessions, so the server no longer recognises
-their tokens: a client that comes back after a purge is told to sign in, not to erase itself. Delete
-first, and purge once their clients have had time to call in, at the latest after the refresh token
-lifetime (`OVP_REFRESH_TOKEN_DAYS`).
+A purge removes the record of the user together with their sessions, favourites, shortcuts and settings.
+The server then no longer recognises the account: a client that still holds an unexpired access token is
+told to erase what it has on its next call, but one that comes back later finds its refresh token
+unknown and is told to sign in, not to erase itself. Delete first, and purge once their clients have had
+time to call in, at the latest after the refresh token lifetime (`OVP_REFRESH_TOKEN_DAYS`).
 
 At the identity provider: removing a user from `users.yaml` or setting `disabled: true` acts on their
 next request; removing them from the directory or the user group acts at their next refresh, at most
@@ -98,5 +100,6 @@ one access token lifetime later; in Entra ID at the next forced sign in, see
 
 ## Maintenance the server does itself
 
-Every hour: expired refresh tokens are removed, deletion records older than 90 days are pruned
-(clients away longer start with a full synchronisation), and old log folders are deleted.
+Every hour: refresh tokens that expired more than a day ago are removed, deletion records older than 90
+days are pruned (clients away longer start with a full synchronisation), and log folders older than
+`OVP_LOG_RETENTION_DAYS` are deleted.

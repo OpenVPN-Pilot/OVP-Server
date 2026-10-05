@@ -16,7 +16,7 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
 
 - **The server itself**: a REST API under `/api/v1` for OpenVPN Pilot's remote mode, one ASP.NET Core
   project on .NET 10 with PostgreSQL, run by Docker Compose. The contract a client relies on is
-  `docs/client-integration.md`.
+  `docs/client-integration/README.md`.
 - **Shared profiles and tags.** Everyone reads them and fetches configurations to connect;
   administrators create, change and delete them, one at a time or up to 500 in one batch. A
   configuration has to be self contained, and one that no client could use is refused with the reason:
@@ -115,8 +115,7 @@ version heading when one is tagged. A release tag is `v<version>`, for example `
 - A malformed `If-Match` was taken as absent: profile updates answered 428 and settings were silently
   overwritten. It now matches nothing and answers 412; `*` and lists of tags work as RFC 9110 says.
 - The server read configurations differently from the client: the last `proto` and `port` instead of
-  the first, quotes kept in the host, only `
-` as line end, case folded names. It now reads them as the
+  the first, quotes kept in the host, only `\n` as line end, case folded names. It now reads them as the
   client's parser does. `dh none` is accepted, credentials in an `<auth-user-pass>` block are refused,
   and a remote host over 255 characters is refused instead of failing with 500.
 - A directory failing after the first connection, during a search or the user's bind, answered 500

@@ -26,7 +26,7 @@ software.
 - `async`/`await` throughout, every asynchronous method takes a `CancellationToken`, and the one a
   controller passes on is the request's own.
 - Every failure a client can act on is RFC 9457 problem details with a stable `code`, listed in
-  `Contracts/ErrorCodes.cs` and in `docs/client-integration.md`. The text may change; the code may not.
+  `Contracts/ErrorCodes.cs` and in `docs/client-integration/errors.md`. The text may change; the code may not.
 - Configuration is read once into options classes and validated at start. A missing or malformed
   value stops the process with a message that names the variable, rather than failing on the first
   request that needs it.
@@ -43,7 +43,7 @@ written by `dotnet ef` are exempt: they are generated, not written.
 There are no unit tests, deliberately. The server is thin: most of it is mapping, persistence and
 framework configuration, where a unit test restates the code it covers. What is worth proving is
 behaviour against a real database, a real directory and a real client, and that is done by hand
-against the Compose stack and written down in `docs/development.md`. Do not add a test project.
+against the Compose stack and written down in `docs/development/testing.md`. Do not add a test project.
 
 ## Language and style
 
@@ -79,12 +79,16 @@ This repository is public. Keep it free of context about who uses it or why it w
 ## Documentation
 
 - A short README that says what this is and points at the rest, and one page per subject under
-  `docs/`: `deployment.md`, `configuration.md`, `authentication.md`, `operations.md`,
-  `client-integration.md`, `development.md`. A subject gets a page when it is a subject, not because
-  there is more to say about one that already has one.
-- `docs/client-integration.md` is the contract with the client. Every endpoint, header, error code
-  and behaviour a client depends on is described there, and a change to any of them changes that page
-  in the same commit.
+  `docs/`: `deployment.md`, `configuration.md`, `authentication.md`, `operations.md`, and the two
+  subjects that are several pages, each a folder with a `README.md` that indexes it:
+  `client-integration/` (`headers.md`, `sessions.md`, `wipe-directive.md`, `errors.md`, `profiles.md`,
+  `vault.md`, `synchronisation.md`, `personal-data.md`, `users.md`, `endpoint-reference.md`,
+  `implementing-a-client.md`) and `development/` (`architecture.md`, `building.md`, `testing.md`). A
+  subject gets a page when it is a subject, not because there is more to say about one that already
+  has one, and a page that grows past about 250 lines is split along its own seams.
+- `docs/client-integration/` is the contract with the client. Every endpoint, header, error code and
+  behaviour a client depends on is described there, and a change to any of them changes the page it
+  belongs to in the same commit.
 - Every environment variable is in `.env.example` and in `docs/configuration.md`, in the same commit
   that introduces it.
 - `CHANGELOG.md` follows Keep a Changelog. Every change a deployer or a client developer would notice
