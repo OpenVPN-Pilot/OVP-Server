@@ -71,8 +71,7 @@ The details, including running behind a reverse proxy, are in [docs/deployment.m
 - [x] Roles, account revocation and the wipe directive
 - [x] Docker Compose, logging, Swagger
 - [x] Remote mode in the client
-- [ ] Rotating the data key in place
-- [ ] Signing in with Entra ID measured against a real tenant
+- [x] Signing in with Entra ID measured against a real tenant
 
 The server keeps no connection history. Sessions, durations and traffic stay on each client, as they
 do today.
